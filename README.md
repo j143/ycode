@@ -1,13 +1,13 @@
-# Claude Code Rebuild
+# ycode
 
-A from-scratch rebuild of the Claude Code agentic CLI using its core tech stack: **TypeScript**, **CommanderJS**, and an **Agentic Loop** architecture.
+A from-scratch rebuild of the Claude Code agentic CLI using local and open-source models for accessibility.
 
 ## Tech Stack
 - **Language**: TypeScript
-- **Runtime**: Node.js (Bun ready)
+- **Runtime**: Node.js
 - **CLI Framework**: CommanderJS
+- **LLM Orchestration**: OpenAI SDK (compatible with Ollama, Groq, OpenRouter)
 - **UI**: Chalk, Ora
-- **Agentic Logic**: Custom while-loop with tool execution context
 
 ## Getting Started
 
@@ -16,19 +16,20 @@ A from-scratch rebuild of the Claude Code agentic CLI using its core tech stack:
    npm install
    ```
 
-2. Start the interactive chat:
+2. Configure environment:
+   Copy `.env.example` to `.env` and adjust the settings. By default, it looks for a local Ollama instance.
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Start the interactive chat:
    ```bash
    npm run chat
    ```
 
 ## Features
-- **Agentic Loop**: Continuous interaction between the user and the assistant.
+- **Agentic Loop**: Autonomous multi-step reasoning and execution.
+- **Local-First**: Designed to work with Ollama (e.g., Qwen2.5-Coder, Llama 3).
 - **Tool System**: Extensible tool execution system (ls, cat, write, mkdir, rm).
-- **Context Management**: Persistent conversation history.
-- **MCP Ready**: Placeholder for Model Context Protocol integration.
+- **Open-Compatible**: Easily switch to Groq or OpenRouter for high-end free models.
 
-## Usage
-Once in the chat, you can ask the assistant to perform tasks. 
-Currently, it uses a mock LLM logic for demonstration:
-- Try typing "list files" to trigger the `ls` tool.
-- Type "exit" to quit the session.

@@ -1,78 +1,89 @@
 import readline from 'readline/promises';
 import chalk from 'chalk';
 import ora from 'ora';
+import OpenAI from 'openai';
 import { AgentContext } from './context.js';
-import { executeTool } from '../tools/index.js';
+import { toolDefinitions, executeTool } from '../tools/index.js';
 
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
 
+const client = new OpenAI({
+  apiKey: process.env.API_KEY || 'ollama',
+  baseURL: process.env.API_BASE_URL || 'http://localhost:11434/v1',
+});
+
+const MODEL = process.env.MODEL_NAME || 'qwen2.5-coder:7b';
+
 export async function startAgentLoop(initialPrompt?: string) {
   const context = new AgentContext();
-  let currentPrompt = initialPrompt;
+  let nextUserPrompt = initialPrompt;
 
-  console.log(chalk.bold.green('\nClaude Rebuild at your service.'));
+  console.log(chalk.bold.green('\nycode at your service (using local/open models).'));
   console.log(chalk.dim('Type "exit" to quit.\n'));
 
   while (true) {
-    if (!currentPrompt) {
-      currentPrompt = await rl.question(chalk.blue('user> '));
+    if (!nextUserPrompt) {
+      nextUserPrompt = await rl.question(chalk.blue('user> '));
     }
 
-    if (currentPrompt.toLowerCase() === 'exit') {
+    if (nextUserPrompt.toLowerCase() === 'exit') {
       console.log(chalk.yellow('Goodbye!'));
       process.exit(0);
     }
 
-    context.addMessage({ role: 'user', content: currentPrompt });
-    currentPrompt = undefined;
+    context.addMessage({ role: 'user', content: nextUserPrompt });
+    nextUserPrompt = undefined;
 
-    const spinner = ora('Claude is thinking...').start();
-
-    try {
-      // This is where the LLM call would happen
-      // For now, we simulate a response with tool calls or text
-      const response = await simulateLLMCall(context);
-      spinner.stop();
-
-      if (response.content) {
-        console.log(chalk.magenta('\nclaude>') + ' ' + response.content);
-      }
-
-      if (response.toolCalls && response.toolCalls.length > 0) {
-        for (const toolCall of response.toolCalls) {
-          console.log(chalk.yellow(`\n[Tool Call]: ${toolCall.name}(${JSON.stringify(toolCall.args)})`));
-          const toolResult = await executeTool(toolCall.name, toolCall.args);
-          console.log(chalk.green(`[Tool Result]: ${JSON.stringify(toolResult).substring(0, 100)}...`));
-          context.addMessage({ role: 'tool', content: JSON.stringify(toolResult), toolCallId: toolCall.id });
-        }
-        // After tool calls, we should loop back to the LLM automatically
-        // but for this simple rebuild, we'll wait for user next step or auto-trigger
-        console.log(chalk.dim('\n(Tool execution finished, waiting for next instruction)'));
-      }
-    } catch (error) {
-      spinner.fail('Error in agent loop');
-      console.error(error);
-    }
+    await runAgentTurn(context);
   }
 }
 
-// Placeholder for LLM interaction
-async function simulateLLMCall(context: AgentContext) {
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  const lastMessage = context.getHistory().at(-1);
-  if (lastMessage?.content.toLowerCase().includes('list files')) {
-    return {
-      content: "I'll list the files in the current directory for you.",
-      toolCalls: [{ id: 'tc1', name: 'ls', args: { path: '.' } }]
-    };
-  }
+async function runAgentTurn(context: AgentContext) {
+  const spinner = ora('Agent is thinking...').start();
 
-  return {
-    content: "I'm a rebuild of Claude Code. I'm ready to help you with your project.",
-    toolCalls: []
-  };
+  try {
+    const response = await client.chat.completions.create({
+      model: MODEL,
+      messages: context.getHistory(),
+      tools: toolDefinitions as any,
+      tool_choice: 'auto',
+    });
+
+    spinner.stop();
+
+    const message = response.choices[0].message;
+    context.addMessage(message);
+
+    if (message.content) {
+      console.log(chalk.magenta('\nassistant>') + ' ' + message.content);
+    }
+
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      for (const toolCall of message.tool_calls) {
+        const name = toolCall.function.name;
+        const args = JSON.parse(toolCall.function.arguments);
+
+        console.log(chalk.yellow(`\n[Tool Call]: ${name}(${JSON.stringify(args)})`));
+        
+        const toolResult = await executeTool(name, args);
+        
+        console.log(chalk.green(`[Tool Result]: ${JSON.stringify(toolResult).substring(0, 100)}${JSON.stringify(toolResult).length > 100 ? '...' : ''}`));
+
+        context.addMessage({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: JSON.stringify(toolResult),
+        });
+      }
+
+      // Automatically run another turn to process tool results
+      await runAgentTurn(context);
+    }
+  } catch (error: any) {
+    spinner.fail('Error in agent loop');
+    console.error(chalk.red(error.message));
+  }
 }

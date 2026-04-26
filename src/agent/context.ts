@@ -1,24 +1,20 @@
-export interface Message {
-  role: 'user' | 'assistant' | 'tool' | 'system';
-  content: string;
-  toolCallId?: string;
-}
+import { ChatCompletionMessageParam } from 'openai/resources/index.mjs';
 
 export class AgentContext {
-  private history: Message[] = [];
+  private history: ChatCompletionMessageParam[] = [];
 
   constructor() {
     this.history.push({
       role: 'system',
-      content: 'You are Claude Code, an agentic CLI assistant. You can use tools to interact with the file system and run commands.'
+      content: 'You are a highly capable agentic CLI assistant. You can use tools to interact with the file system and run commands to help the user with their coding tasks.'
     });
   }
 
-  addMessage(message: Message) {
+  addMessage(message: ChatCompletionMessageParam) {
     this.history.push(message);
   }
 
-  getHistory(): Message[] {
+  getHistory(): ChatCompletionMessageParam[] {
     return [...this.history];
   }
 

@@ -1,6 +1,79 @@
 import fs from 'fs/promises';
 import path from 'path';
 
+export const toolDefinitions = [
+  {
+    type: 'function',
+    function: {
+      name: 'ls',
+      description: 'List files in a directory',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'The path to the directory (defaults to current directory ".")' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'cat',
+      description: 'Read the contents of a file',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'The path to the file' }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'write',
+      description: 'Write content to a file',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'The path to the file' },
+          content: { type: 'string', description: 'The content to write' }
+        },
+        required: ['path', 'content']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'rm',
+      description: 'Remove a file or directory',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'The path to the file or directory' }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'mkdir',
+      description: 'Create a new directory',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'The path to the directory' }
+        },
+        required: ['path']
+      }
+    }
+  }
+];
+
 export async function executeTool(name: string, args: any): Promise<any> {
   switch (name) {
     case 'ls':
