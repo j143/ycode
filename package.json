@@ -1,28 +1,44 @@
 {
   "name": "ycode",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "start": "tsx src/index.ts",
-    "chat": "tsx src/index.ts chat",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "version": "0.1.0",
+  "description": "An open-source agentic CLI for coding tasks.",
   "type": "module",
+  "bin": {
+    "ycode": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "chat": "node dist/index.js chat",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "cli",
+    "agent",
+    "coding",
+    "ai",
+    "local-llm"
+  ],
+  "author": "Janardhan Pulivarthi",
+  "license": "ISC",
   "dependencies": {
-    "chalk": "^5.6.2",
-    "commander": "^14.0.3",
-    "dotenv": "^17.4.2",
-    "openai": "^6.34.0",
-    "ora": "^9.4.0",
-    "zod": "^4.3.6"
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "dotenv": "^16.4.7",
+    "openai": "^4.86.1",
+    "ora": "^8.2.0",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
-    "tsx": "^4.21.0",
-    "typescript": "^6.0.3"
+    "@types/node": "^22.13.5",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
   }
 }
