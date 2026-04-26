@@ -1,12 +1,44 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Box, Text, useApp, Newline } from 'ink';
+import React, { useState, useEffect } from 'react';
+import { Box, Text, useApp, Static } from 'ink';
 import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
 import { useAgent } from '../agent/useAgent.js';
 import { Markdown } from './components/Markdown.js';
 
+const MessageItem = React.memo(({ msg }: { msg: any }) => {
+  if (msg.content === '' && msg.role === 'assistant') return null;
+  
+  if (msg.content.startsWith('[SYSTEM]')) {
+     return (
+       <Box paddingLeft={2} marginBottom={1}>
+         <Text dimColor italic>{msg.content}</Text>
+       </Box>
+     );
+  }
+
+  const isUser = msg.role === 'user';
+  const isAssistant = msg.role === 'assistant';
+
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Box>
+        <Text bold color={isUser ? 'blue' : 'magenta'}>
+          {isUser ? 'You' : 'ycode'}
+        </Text>
+      </Box>
+      <Box paddingLeft={2}>
+        {isAssistant ? (
+          <Markdown>{msg.content}</Markdown>
+        ) : (
+          <Text>{msg.content}</Text>
+        )}
+      </Box>
+    </Box>
+  );
+});
+
 export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => {
-  const { messages, isThinking, pendingToolCall, runTurn } = useAgent();
+  const { messages, streamingContent, isThinking, pendingToolCall, runTurn } = useAgent();
   const [input, setInput] = useState('');
   const { exit } = useApp();
 
@@ -33,40 +65,6 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
     runTurn(value);
   };
 
-  const renderMessage = (msg: any, i: number) => {
-    if (msg.content === '' && msg.role === 'assistant') return null;
-    
-    // Hide system messages from the main view to keep it clean, 
-    // or show them in a special dim way.
-    if (msg.content.startsWith('[SYSTEM]')) {
-       return (
-         <Box key={i} paddingLeft={2} marginBottom={1}>
-           <Text dimColor italic>{msg.content}</Text>
-         </Box>
-       );
-    }
-
-    const isUser = msg.role === 'user';
-    const isAssistant = msg.role === 'assistant';
-
-    return (
-      <Box key={i} flexDirection="column" marginBottom={1}>
-        <Box>
-          <Text bold color={isUser ? 'blue' : 'magenta'}>
-            {isUser ? 'You' : 'ycode'}
-          </Text>
-        </Box>
-        <Box paddingLeft={2}>
-          {isAssistant ? (
-            <Markdown>{msg.content}</Markdown>
-          ) : (
-            <Text>{msg.content}</Text>
-          )}
-        </Box>
-      </Box>
-    );
-  };
-
   return (
     <Box flexDirection="column" padding={1} minHeight={10}>
       {/* Header */}
@@ -79,7 +77,12 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
 
       {/* Messages */}
       <Box flexDirection="column">
-        {messages.map(renderMessage)}
+        {messages.map((msg, i) => (
+          <MessageItem key={i} msg={msg} />
+        ))}
+        {streamingContent !== null && (
+          <MessageItem msg={{ role: 'assistant', content: streamingContent }} />
+        )}
       </Box>
 
       {/* Tool Permission */}
@@ -102,7 +105,7 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
 
       {/* Footer / Input */}
       <Box flexDirection="column">
-        {isThinking && !pendingToolCall && (
+        {isThinking && !pendingToolCall && streamingContent === '' && (
           <Box marginBottom={1}>
             <Text color="yellow">
               <Spinner type="dots" /> <Text italic>Thinking...</Text>
@@ -110,7 +113,7 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
           </Box>
         )}
 
-        {!pendingToolCall && (
+        {!pendingToolCall && streamingContent === null && (
           <Box borderStyle="round" borderColor="blue" paddingX={1}>
             <Text bold color="blue">{"user> "}</Text>
             <TextInput

@@ -26,6 +26,7 @@ interface PendingToolCall {
 
 export function useAgent() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
   const [pendingToolCall, setPendingToolCall] = useState<PendingToolCall | null>(null);
   const contextRef = useRef(new AgentContext());
@@ -41,10 +42,8 @@ export function useAgent() {
     }
 
     setIsThinking(true);
+    setStreamingContent('');
     let fullContent = '';
-    
-    // Add an empty assistant message that we will stream into
-    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
     try {
       const stream = await client.chat.completions.create({
@@ -57,18 +56,12 @@ export function useAgent() {
         const delta = chunk.choices[0]?.delta;
         if (delta?.content) {
           fullContent += delta.content;
-          setMessages(prev => {
-            const newMessages = [...prev];
-            const lastMsg = newMessages[newMessages.length - 1];
-            if (lastMsg && lastMsg.role === 'assistant') {
-              lastMsg.content = fullContent;
-            }
-            return newMessages;
-          });
+          setStreamingContent(fullContent);
         }
       }
 
-      contextRef.current.addMessage({ role: 'assistant', content: fullContent });
+      setStreamingContent(null);
+      addMessage({ role: 'assistant', content: fullContent });
       setIsThinking(false);
 
       // Parse manual tool calls
@@ -124,6 +117,7 @@ export function useAgent() {
 
   return {
     messages,
+    streamingContent,
     isThinking,
     pendingToolCall,
     runTurn

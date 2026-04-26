@@ -274,3 +274,7 @@ time=2026-04-26T15:08:05.962Z level=INFO source=server.go:599 msg="llama runner 
 [GIN] 2026/04/26 - 15:12:52 | 404 |     365.471µs |       127.0.0.1 | POST     "/v1/chat/completions"
 [GIN] 2026/04/26 - 15:14:27 | 200 |  9.252887419s |       127.0.0.1 | POST     "/v1/chat/completions"
 [GIN] 2026/04/26 - 15:14:44 | 200 |  16.55417815s |       127.0.0.1 | POST     "/v1/chat/completions"
+[GIN] 2026/04/26 - 15:23:00 | 404 |     737.018µs |       127.0.0.1 | POST     "/v1/chat/completions"
+[GIN] 2026/04/26 - 15:24:34 | 200 |     163.997µs |       127.0.0.1 | HEAD     "/"
+[GIN] 2026/04/26 - 15:24:34 | 200 |      719.89µs |       127.0.0.1 | GET      "/api/tags"
+[GIN] 2026/04/26 - 15:25:33 | 404 |     355.413µs |       127.0.0.1 | POST     "/v1/chat/completions"
