@@ -52,11 +52,16 @@ export function useAgent(isAutoMode: boolean = false) {
         stream: true,
       });
 
+      let lastUpdateTime = Date.now();
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta;
         if (delta?.content) {
           fullContent += delta.content;
-          setStreamingContent(fullContent);
+          const now = Date.now();
+          if (now - lastUpdateTime > 60) {
+            setStreamingContent(fullContent);
+            lastUpdateTime = now;
+          }
         }
       }
 
@@ -125,7 +130,7 @@ export function useAgent(isAutoMode: boolean = false) {
       addMessage({ role: 'system', content: `Error: ${error.message}` });
       setIsThinking(false);
     }
-  }, [addMessage]);
+  }, [addMessage, isAutoMode]);
 
   return {
     messages,
