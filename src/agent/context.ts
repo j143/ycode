@@ -31,6 +31,10 @@ You can interact naturally with the user, but you also have access to tools to p
 - replace(path: string, old_string: string, new_string: string): Surgical text replacement.
 - think(thought: string): Explicit turn for internal reasoning and planning.
 - done(message: string): Signal that the overall goal or task is completely finished.
+- git_status(): Get git short status.
+- git_diff(staged?: boolean): Show git diff.
+- git_add(files: string[]): Stage files.
+- git_commit(message: string): Commit changes.
 
 ## Example
 User: "Check the files in src"

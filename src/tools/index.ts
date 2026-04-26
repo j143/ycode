@@ -148,6 +148,55 @@ export const toolDefinitions = [
         required: ['message']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_status',
+      description: 'Get the short status of the git repository',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_diff',
+      description: 'Show changes between commits, commit and working tree, etc.',
+      parameters: {
+        type: 'object',
+        properties: {
+          staged: { type: 'boolean', description: 'Whether to show staged changes' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_add',
+      description: 'Add file contents to the index',
+      parameters: {
+        type: 'object',
+        properties: {
+          files: { type: 'array', items: { type: 'string' }, description: 'List of files to add' }
+        },
+        required: ['files']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_commit',
+      description: 'Record changes to the repository',
+      parameters: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', description: 'Commit message' }
+        },
+        required: ['message']
+      }
+    }
   }
 ];
 
@@ -173,9 +222,35 @@ export async function executeTool(name: string, args: any): Promise<any> {
       return { success: true, thought: args.thought };
     case 'done':
       return { success: true, message: args.message, status: "Task completed." };
+    case 'git_status':
+      return await gitStatus();
+    case 'git_diff':
+      return await gitDiff(args.staged);
+    case 'git_add':
+      return await gitAdd(args.files);
+    case 'git_commit':
+      return await gitCommit(args.message);
     default:
       throw new Error(`Tool ${name} not found`);
   }
+}
+
+async function gitStatus() {
+  return await bash('git status --short');
+}
+
+async function gitDiff(staged: boolean = false) {
+  const cmd = staged ? 'git diff --staged' : 'git diff';
+  return await bash(cmd);
+}
+
+async function gitAdd(files: string[]) {
+  const filesStr = files.join(' ');
+  return await bash(`git add ${filesStr}`);
+}
+
+async function gitCommit(message: string) {
+  return await bash(`git commit -m "${message.replace(/"/g, '\\"')}"`);
 }
 
 async function ls(dirPath: string) {
