@@ -3,7 +3,10 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import React from 'react';
 import { render } from 'ink';
+import dotenv from 'dotenv';
 import { App } from './ui/App.js';
+
+dotenv.config();
 
 const program = new Command();
 

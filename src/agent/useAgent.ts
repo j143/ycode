@@ -10,7 +10,7 @@ const client = new OpenAI({
 });
 
 function getModel() {
-  return process.env.MODEL_NAME || 'tinyllama';
+  return process.env.MODEL_NAME || 'qwen2.5-coder:1.5b';
 }
 
 interface Message {
