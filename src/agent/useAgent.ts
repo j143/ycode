@@ -24,7 +24,7 @@ interface PendingToolCall {
   resolve: (allowed: boolean) => void;
 }
 
-export function useAgent() {
+export function useAgent(isAutoMode: boolean = false) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
@@ -77,6 +77,9 @@ export function useAgent() {
       }
 
       if (manualToolCalls.length > 0) {
+        let anyExecuted = false;
+        let isDone = false;
+
         for (const toolCall of manualToolCalls) {
           let args = {};
           try {
@@ -86,11 +89,15 @@ export function useAgent() {
             continue;
           }
 
-          // Read-only tools auto-allow
-          const isReadOnly = ['ls', 'cat', 'search'].includes(toolCall.name);
-          let allowed = isReadOnly;
+          if (toolCall.name === 'done') {
+            isDone = true;
+          }
 
-          if (!isReadOnly) {
+          // Read-only tools auto-allow
+          const isReadOnly = ['ls', 'cat', 'search', 'think'].includes(toolCall.name);
+          let allowed = isReadOnly || isAutoMode;
+
+          if (!allowed) {
             allowed = await new Promise<boolean>(resolve => {
               setPendingToolCall({ name: toolCall.name, args, resolve });
             });
@@ -103,10 +110,15 @@ export function useAgent() {
               role: 'user', 
               content: `[SYSTEM] Tool ${toolCall.name} returned: ${JSON.stringify(toolResult)}` 
             });
-            await runTurn();
+            anyExecuted = true;
           } else {
             addMessage({ role: 'user', content: `[SYSTEM] Tool call ${toolCall.name} was denied by the user.` });
           }
+        }
+        
+        // After executing all tool calls, continue the turn automatically if not done
+        if (anyExecuted && !isDone) {
+           await runTurn();
         }
       }
     } catch (error: any) {

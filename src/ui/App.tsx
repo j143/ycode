@@ -38,7 +38,8 @@ const MessageItem = React.memo(({ msg }: { msg: any }) => {
 });
 
 export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => {
-  const { messages, streamingContent, isThinking, pendingToolCall, runTurn } = useAgent();
+  const [isAutoMode, setIsAutoMode] = useState(false);
+  const { messages, streamingContent, isThinking, pendingToolCall, runTurn } = useAgent(isAutoMode);
   const [input, setInput] = useState('');
   const { exit } = useApp();
 
@@ -54,6 +55,12 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
       return;
     }
 
+    if (value.toLowerCase() === '/auto') {
+      setIsAutoMode(prev => !prev);
+      setInput('');
+      return;
+    }
+
     if (pendingToolCall) {
       const allowed = value.toLowerCase() === 'y';
       pendingToolCall.resolve(allowed);
@@ -61,8 +68,11 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
       return;
     }
 
+    // Shortcut: empty input means "continue"
+    const finalPrompt = value.trim() === '' ? 'Please continue.' : value;
+
     setInput('');
-    runTurn(value);
+    runTurn(finalPrompt);
   };
 
   return (
@@ -73,6 +83,12 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
         <Box marginLeft={2}>
           <Text dimColor>Local Agentic CLI</Text>
         </Box>
+        <Box flexGrow={1} />
+        {isAutoMode && (
+          <Box>
+            <Text bold color="red">[AUTO-MODE ON]</Text>
+          </Box>
+        )}
       </Box>
 
       {/* Messages */}

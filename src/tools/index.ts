@@ -120,6 +120,34 @@ export const toolDefinitions = [
         required: ['path', 'old_string', 'new_string']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'think',
+      description: 'Reason and plan next steps without performing an external action. Use this for complex multi-step tasks.',
+      parameters: {
+        type: 'object',
+        properties: {
+          thought: { type: 'string', description: 'Your internal reasoning or plan' }
+        },
+        required: ['thought']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'done',
+      description: 'Signal that the requested task or overall goal is completely finished.',
+      parameters: {
+        type: 'object',
+        properties: {
+          message: { type: 'string', description: 'A brief summary of what was accomplished' }
+        },
+        required: ['message']
+      }
+    }
   }
 ];
 
@@ -141,6 +169,10 @@ export async function executeTool(name: string, args: any): Promise<any> {
       return await search(args.pattern, args.path || '.');
     case 'replace':
       return await replace(args.path, args.old_string, args.new_string);
+    case 'think':
+      return { success: true, thought: args.thought };
+    case 'done':
+      return { success: true, message: args.message, status: "Task completed." };
     default:
       throw new Error(`Tool ${name} not found`);
   }
