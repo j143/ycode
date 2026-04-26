@@ -46,28 +46,58 @@ async function runAgentTurn(context: AgentContext) {
   const spinner = ora('Agent is thinking...').start();
 
   try {
-    const response = await client.chat.completions.create({
+    const stream = await client.chat.completions.create({
       model: getModel(),
       messages: context.getHistory(),
       tools: toolDefinitions as any,
       tool_choice: 'auto',
+      stream: true,
     });
 
     spinner.stop();
 
-    const message = response.choices[0].message;
-    context.addMessage(message);
+    let fullContent = '';
+    let toolCalls: any[] = [];
+    
+    process.stdout.write(chalk.magenta('\nassistant> '));
 
-    if (message.content) {
-      console.log(chalk.magenta('\nassistant>') + ' ' + message.content);
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta;
+      if (!delta) continue;
+
+      if (delta.content) {
+        fullContent += delta.content;
+        process.stdout.write(delta.content);
+      }
+
+      if (delta.tool_calls) {
+        for (const tcDelta of delta.tool_calls) {
+          if (!toolCalls[tcDelta.index]) {
+            toolCalls[tcDelta.index] = { id: tcDelta.id, function: { name: '', arguments: '' }, type: 'function' };
+          }
+          if (tcDelta.function?.name) {
+            toolCalls[tcDelta.index].function.name += tcDelta.function.name;
+          }
+          if (tcDelta.function?.arguments) {
+            toolCalls[tcDelta.index].function.arguments += tcDelta.function.arguments;
+          }
+        }
+      }
     }
+    
+    process.stdout.write('\n');
 
-    if (message.tool_calls && message.tool_calls.length > 0) {
-      for (const toolCall of message.tool_calls) {
-        if (toolCall.type !== 'function') continue;
-        
+    // Add assistant message to context
+    const assistantMessage: any = { role: 'assistant' };
+    if (fullContent) assistantMessage.content = fullContent;
+    if (toolCalls.length > 0) assistantMessage.tool_calls = toolCalls;
+    
+    context.addMessage(assistantMessage);
+
+    if (toolCalls.length > 0) {
+      for (const toolCall of toolCalls) {
         const name = toolCall.function.name;
-        const args = JSON.parse(toolCall.function.arguments);
+        const args = JSON.parse(toolCall.function.arguments || '{}');
 
         console.log(chalk.yellow(`\n[Tool Call]: ${name}(${JSON.stringify(args)})`));
         
