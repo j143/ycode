@@ -35,6 +35,7 @@ You can interact naturally with the user, but you also have access to tools to p
 - git_diff(staged?: boolean): Show git diff.
 - git_add(files: string[]): Stage files.
 - git_commit(message: string): Commit changes.
+- glob(pattern: string): Find files matching a pattern.
 
 ## Example
 User: "Check the files in src"
@@ -54,6 +55,15 @@ Assistant: "I have finished creating the files.
 
   addMessage(message: ChatCompletionMessageParam) {
     this.history.push(message);
+    
+    // Simple Sliding Window: Keep system prompt (index 0) 
+    // and the last 20 messages.
+    const maxHistoryLength = 20;
+    if (this.history.length > maxHistoryLength) {
+      const systemMessage = this.history[0];
+      const recentHistory = this.history.slice(-(maxHistoryLength - 1));
+      this.history = [systemMessage, ...recentHistory];
+    }
   }
 
   getHistory(): ChatCompletionMessageParam[] {

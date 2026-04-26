@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text, useApp, Static } from 'ink';
+import { Box, Text, useApp, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
 import { useAgent } from '../agent/useAgent.js';
@@ -41,6 +41,8 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
   const [isAutoMode, setIsAutoMode] = useState(false);
   const { messages, streamingContent, isThinking, pendingToolCall, runTurn } = useAgent(isAutoMode);
   const [input, setInput] = useState('');
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
   const { exit } = useApp();
 
   useEffect(() => {
@@ -48,6 +50,30 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
       runTurn(initialPrompt);
     }
   }, []);
+
+  useInput((inputStr, key) => {
+    if (pendingToolCall) return;
+
+    if (key.upArrow) {
+      if (historyIndex < history.length - 1) {
+        const nextIndex = historyIndex + 1;
+        setHistoryIndex(nextIndex);
+        setInput(history[history.length - 1 - nextIndex] || '');
+      }
+    }
+
+    if (key.downArrow) {
+      if (historyIndex >= 0) {
+        const nextIndex = historyIndex - 1;
+        setHistoryIndex(nextIndex);
+        if (nextIndex === -1) {
+          setInput('');
+        } else {
+          setInput(history[history.length - 1 - nextIndex] || '');
+        }
+      }
+    }
+  });
 
   const handleSubmit = (value: string) => {
     if (value.toLowerCase() === 'exit') {
@@ -67,6 +93,12 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
       setInput('');
       return;
     }
+
+    // Add to history
+    if (value.trim() !== '') {
+      setHistory(prev => [...prev, value]);
+    }
+    setHistoryIndex(-1);
 
     // Shortcut: empty input means "continue"
     const finalPrompt = value.trim() === '' ? 'Please continue.' : value;

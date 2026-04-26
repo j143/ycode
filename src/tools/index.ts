@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { glob } from 'glob';
 
 const execAsync = promisify(exec);
 
@@ -197,6 +198,20 @@ export const toolDefinitions = [
         required: ['message']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'glob',
+      description: 'Find files matching a glob pattern (e.g., "src/**/*.ts")',
+      parameters: {
+        type: 'object',
+        properties: {
+          pattern: { type: 'string', description: 'The glob pattern to match' }
+        },
+        required: ['pattern']
+      }
+    }
   }
 ];
 
@@ -230,10 +245,22 @@ export async function executeTool(name: string, args: any): Promise<any> {
       return await gitAdd(args.files);
     case 'git_commit':
       return await gitCommit(args.message);
+    case 'glob':
+      return await runGlob(args.pattern);
     default:
       throw new Error(`Tool ${name} not found`);
   }
 }
+
+async function runGlob(pattern: string) {
+  try {
+    const files = await glob(pattern, { ignore: 'node_modules/**' });
+    return { files };
+  } catch (error: any) {
+    return { error: error.message };
+  }
+}
+
 
 async function gitStatus() {
   return await bash('git status --short');
