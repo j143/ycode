@@ -18,5 +18,5 @@ export async function requestPermission(toolName: string, args: any): Promise<bo
     chalk.bold('Proceed? (y/n): ')
   );
 
-  return answer.toLowerCase() === 'y';
+  return answer.trim().toLowerCase() === 'y';
 }

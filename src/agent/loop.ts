@@ -49,16 +49,12 @@ async function runAgentTurn(context: AgentContext) {
     const stream = await client.chat.completions.create({
       model: getModel(),
       messages: context.getHistory(),
-      tools: toolDefinitions as any,
-      tool_choice: 'auto',
       stream: true,
     });
 
     spinner.stop();
 
     let fullContent = '';
-    let toolCalls: any[] = [];
-    
     process.stdout.write(chalk.magenta('\nassistant> '));
 
     for await (const chunk of stream) {
@@ -69,57 +65,58 @@ async function runAgentTurn(context: AgentContext) {
         fullContent += delta.content;
         process.stdout.write(delta.content);
       }
-
-      if (delta.tool_calls) {
-        for (const tcDelta of delta.tool_calls) {
-          if (!toolCalls[tcDelta.index]) {
-            toolCalls[tcDelta.index] = { id: tcDelta.id, function: { name: '', arguments: '' }, type: 'function' };
-          }
-          if (tcDelta.function?.name) {
-            toolCalls[tcDelta.index].function.name += tcDelta.function.name;
-          }
-          if (tcDelta.function?.arguments) {
-            toolCalls[tcDelta.index].function.arguments += tcDelta.function.arguments;
-          }
-        }
-      }
     }
     
     process.stdout.write('\n');
 
     // Add assistant message to context
-    const assistantMessage: any = { role: 'assistant' };
-    if (fullContent) assistantMessage.content = fullContent;
-    if (toolCalls.length > 0) assistantMessage.tool_calls = toolCalls;
-    
-    context.addMessage(assistantMessage);
+    context.addMessage({ role: 'assistant', content: fullContent });
 
-    if (toolCalls.length > 0) {
-      for (const toolCall of toolCalls) {
-        const name = toolCall.function.name;
-        const args = JSON.parse(toolCall.function.arguments || '{}');
+    // Parse manual tool calls: <tool_call name="tool_name">{"args": "..."}</tool_call>
+    const toolCallRegex = /<tool_call name="([^"]+)">([\s\S]*?)<\/tool_call>/g;
+    let match;
+    const manualToolCalls = [];
 
-        console.log(chalk.yellow(`\n[Tool Call]: ${name}(${JSON.stringify(args)})`));
-        
-        const allowed = await requestPermission(name, args);
-        if (!allowed) {
-          console.log(chalk.red(`[Permission Denied]: ${name}`));
+    while ((match = toolCallRegex.exec(fullContent)) !== null) {
+      manualToolCalls.push({
+        name: match[1],
+        argsRaw: match[2].trim()
+      });
+    }
+
+    if (manualToolCalls.length > 0) {
+      for (const toolCall of manualToolCalls) {
+        let args = {};
+        try {
+          args = JSON.parse(toolCall.argsRaw);
+        } catch (e) {
+          console.log(chalk.red(`\n[Error parsing arguments for ${toolCall.name}]: ${toolCall.argsRaw}`));
           context.addMessage({
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            content: JSON.stringify({ error: 'User denied permission for this tool call' }),
+            role: 'user',
+            content: `Error parsing arguments for tool ${toolCall.name}. Please ensure you provide valid JSON.`
           });
           continue;
         }
 
-        const toolResult = await executeTool(name, args);
+        console.log(chalk.yellow(`\n[Tool Call]: ${toolCall.name}(${JSON.stringify(args)})`));
+        
+        const allowed = await requestPermission(toolCall.name, args);
+        if (!allowed) {
+          console.log(chalk.red(`[Permission Denied]: ${toolCall.name}`));
+          context.addMessage({
+            role: 'user',
+            content: `Tool call ${toolCall.name} was denied by the user.`
+          });
+          continue;
+        }
+
+        const toolResult = await executeTool(toolCall.name, args);
         
         console.log(chalk.green(`[Tool Result]: ${JSON.stringify(toolResult).substring(0, 100)}${JSON.stringify(toolResult).length > 100 ? '...' : ''}`));
 
         context.addMessage({
-          role: 'tool',
-          tool_call_id: toolCall.id,
-          content: JSON.stringify(toolResult),
+          role: 'user',
+          content: `Tool ${toolCall.name} returned: ${JSON.stringify(toolResult)}`
         });
       }
 
