@@ -29,6 +29,7 @@
   "license": "ISC",
   "dependencies": {
     "chalk": "^5.4.1",
+    "cli-highlight": "^2.1.11",
     "commander": "^13.1.0",
     "dotenv": "^16.4.7",
     "ink": "^7.0.1",
