@@ -116,7 +116,7 @@ async function runAgentTurn(context: AgentContext) {
 
         context.addMessage({
           role: 'user',
-          content: `Tool ${toolCall.name} returned: ${JSON.stringify(toolResult)}`
+          content: `[SYSTEM] Tool ${toolCall.name} returned: ${JSON.stringify(toolResult)}`
         });
       }
 
