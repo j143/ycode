@@ -1,10 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import chalk from 'chalk';
-import dotenv from 'dotenv';
 import { startAgentLoop } from './agent/loop.js';
-
-dotenv.config();
 
 const program = new Command();
 

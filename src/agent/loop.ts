@@ -1,17 +1,22 @@
 import chalk from 'chalk';
 import ora from 'ora';
 import OpenAI from 'openai';
+import dotenv from 'dotenv';
 import { AgentContext } from './context.js';
 import { toolDefinitions, executeTool } from '../tools/index.js';
 import { rl } from '../utils/ui.js';
 import { requestPermission } from '../utils/permissions.js';
+
+dotenv.config();
 
 const client = new OpenAI({
   apiKey: process.env.API_KEY || 'ollama',
   baseURL: process.env.API_BASE_URL || 'http://localhost:11434/v1',
 });
 
-const MODEL = process.env.MODEL_NAME || 'qwen2.5-coder:7b';
+function getModel() {
+  return process.env.MODEL_NAME || 'tinyllama';
+}
 
 export async function startAgentLoop(initialPrompt?: string) {
   const context = new AgentContext();
@@ -42,7 +47,7 @@ async function runAgentTurn(context: AgentContext) {
 
   try {
     const response = await client.chat.completions.create({
-      model: MODEL,
+      model: getModel(),
       messages: context.getHistory(),
       tools: toolDefinitions as any,
       tool_choice: 'auto',

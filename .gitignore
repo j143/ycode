@@ -25,5 +25,11 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-# VS Code
-.vscode/
+# Binaries & Logs
+ollama
+ollama_bin
+*.log
+install.sh
+test-sandbox/
+eval-sandbox/
+.env

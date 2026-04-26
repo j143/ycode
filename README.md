@@ -1,35 +1,69 @@
 # ycode
 
-A from-scratch rebuild of the Claude Code agentic CLI using local and open-source models for accessibility.
+An agentic CLI designed for local-first software engineering. It implements the "Agentic Loop" architecture—planning, executing, and verifying tasks—using open-source models (via Ollama/Groq) to provide a private, cost-free alternative to paywalled coding assistants.
 
-## Tech Stack
-- **Language**: TypeScript
-- **Runtime**: Node.js
-- **CLI Framework**: CommanderJS
-- **LLM Orchestration**: OpenAI SDK (compatible with Ollama, Groq, OpenRouter)
-- **UI**: Chalk, Ora
+## The Core Concept: The Loop
+ycode operates on a continuous feedback loop:
+1. **Perceive**: Receives user intent and current project context.
+2. **Reason**: The LLM decides which tools are necessary (ls, cat, write, etc.).
+3. **Act**: Executes the tool after user verification.
+4. **Observe**: Injects the tool's output back into the conversation for the next reasoning step.
+
+## Technical Stack
+- **Runtime**: Node.js (TypeScript)
+- **Engine**: OpenAI SDK (Universal bridge for local/open endpoints)
+- **Tooling**: Built-in filesystem primitives with a manual permission model.
+- **Testing**: Vitest integration for behavioral evaluations (Evals).
 
 ## Getting Started
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
+### 1. Prerequisites
+Ensure you have a local model runner like [Ollama](https://ollama.com/) or a free API key from [Groq](https://console.groq.com/).
 
-2. Configure environment:
-   Copy `.env.example` to `.env` and adjust the settings. By default, it looks for a local Ollama instance.
-   ```bash
-   cp .env.example .env
-   ```
+### 2. Configuration
+Create a `.env` file (or copy from `.env.example`):
+```bash
+# Example for local Ollama
+API_BASE_URL=http://localhost:11434/v1
+API_KEY=ollama
+MODEL_NAME=qwen2.5-coder:7b
+```
 
-3. Start the interactive chat:
-   ```bash
-   npm run chat
-   ```
+### 3. Installation
+```bash
+npm install
+npm run build
+npm link # Optional: run 'ycode' from anywhere
+```
 
-## Features
-- **Agentic Loop**: Autonomous multi-step reasoning and execution.
-- **Local-First**: Designed to work with Ollama (e.g., Qwen2.5-Coder, Llama 3).
-- **Tool System**: Extensible tool execution system (ls, cat, write, mkdir, rm).
-- **Open-Compatible**: Easily switch to Groq or OpenRouter for high-end free models.
+## Usage Patterns
 
+### Interactive Chat
+Start the agentic session:
+```bash
+ycode chat
+```
+
+### Direct Instruction
+Kickstart the loop with a specific prompt:
+```bash
+ycode chat "List the files in src and tell me what the project does"
+```
+
+### Common Tasks
+- **Context Gathering**: "Read the README and summarize the setup."
+- **Code Generation**: "Create a new utility in src/utils/math.ts that handles Fibonacci sequences."
+- **Refactoring**: "Read src/index.ts and suggest improvements for the error handling."
+
+## Security: The Permission Model
+ycode follows a **Security-First** approach. For any tool that modifies the filesystem (`write`, `rm`, `mkdir`), the agent will pause and request explicit user confirmation.
+```text
+[Tool Call]: write({"path":"src/test.ts","content":"..."})
+[Permission Request] Allow tool "write" with args {...}? (y/n): 
+```
+
+## Development & Testing
+Run the integration suite and behavioral evals:
+```bash
+npm test
+```
