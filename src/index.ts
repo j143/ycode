@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { startAgentLoop } from './agent/loop.js';
+import React from 'react';
+import { render } from 'ink';
+import { App } from './ui/App.js';
 
 const program = new Command();
 
@@ -14,15 +16,14 @@ program
   .command('chat')
   .description('Start an interactive chat session with the agent')
   .argument('[prompt]', 'Initial prompt to start the conversation')
-  .action(async (prompt) => {
-    console.log(chalk.cyan('Starting agentic loop...'));
-    await startAgentLoop(prompt);
+  .action((prompt) => {
+    render(React.createElement(App, { initialPrompt: prompt }));
   });
 
 // Default to chat if no command is specified
 program
-  .action(async () => {
-    await startAgentLoop();
+  .action(() => {
+    render(React.createElement(App, {}));
   });
 
 program.parse(process.argv);
