@@ -15,52 +15,25 @@ ycode operates on a continuous feedback loop:
 - **Tooling**: Built-in filesystem primitives with a manual permission model.
 - **Testing**: Vitest integration for behavioral evaluations (Evals).
 
-## Getting Started
+## 🚀 Getting Started
 
-### 1. Prerequisites
-Ensure you have a local model runner like [Ollama](https://ollama.com/) or a free API key from [Groq](https://console.groq.com/).
+See [GETTING_STARTED.md](./GETTING_STARTED.md) for detailed installation and setup instructions.
 
-### 2. Configuration
-Create a `.env` file (or copy from `.env.example`):
-```bash
-# Example for local Ollama
-API_BASE_URL=http://localhost:11434/v1
-API_KEY=ollama
-MODEL_NAME=qwen2.5-coder:7b
-```
+### Quick Start
+1. `npm install`
+2. `npm run build`
+3. `npm start`
 
-### 3. Installation
-```bash
-npm install
-npm run build
-npm link # Optional: run 'ycode' from anywhere
-```
-
-## Usage Patterns
-
-### Interactive Chat
-Start the agentic session:
-```bash
-ycode chat
-```
-
-### Direct Instruction
-Kickstart the loop with a specific prompt:
-```bash
-ycode chat "List the files in src and tell me what the project does"
-```
-
-### Common Tasks
-- **Context Gathering**: "Read the README and summarize the setup."
-- **Code Generation**: "Create a new utility in src/utils/math.ts that handles Fibonacci sequences."
-- **Refactoring**: "Read src/index.ts and suggest improvements for the error handling."
+## ✨ New in v0.1.0: Rich CLI UI
+`ycode` now features a modern, interactive CLI built with **Ink (React for CLI)**:
+- **Live Streaming**: Watch assistant responses and tool outputs appear in real-time.
+- **Interactive Permissions**: Approve or deny sensitive tool calls (like `bash` or `rm`) through a dedicated UI block.
+- **Markdown Support**: Beautifully formatted technical explanations and code blocks.
+- **Improved Reliability**: A new XML-based manual tool calling system designed specifically for local models like Qwen2.5-coder.
 
 ## Security: The Permission Model
-ycode follows a **Security-First** approach. For any tool that modifies the filesystem (`write`, `rm`, `mkdir`), the agent will pause and request explicit user confirmation.
-```text
-[Tool Call]: write({"path":"src/test.ts","content":"..."})
-[Permission Request] Allow tool "write" with args {...}? (y/n): 
-```
+ycode follows a **Security-First** approach. For any tool that modifies the filesystem or executes shell commands, the agent will pause and request explicit user confirmation via an interactive UI block.
+
 
 ## Development & Testing
 Run the integration suite and behavioral evals:
