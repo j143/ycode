@@ -32,11 +32,11 @@ Standard agentic CLIs (Claude Code, Gemini CLI) rely on massive frontier models 
 *   **Strict Output Enforcement**: The system intercepts assistant messages containing code blocks without tool calls and forces the agent to use the appropriate tool.
 *   **Rationale**: Prevents the "Chat-as-Output" failure where models provide code as text rather than performing the action.
 
-### 6. Mandatory Planning for Creation
-*   **Mechanism**: Any task that modifies or creates files is considered "complex" and requires a `manage_plan` call.
-*   **Rationale**: Ensures the agent considers the implications (location, name, configuration) before writing data.
+### 7. Markdown-Native Tooling (Code-First Protocol)
+*   **Mechanism**: Move away from XML-wrapped JSON for content-heavy tools (write, edit, bash). Instead, use specialized markdown code blocks: ` ```write path/to/file`, ` ```bash`, ` ```think`, etc.
+*   **Rationale**: Smaller models struggle with JSON string escaping (newlines, quotes). Markdown code blocks are native to their training data and require zero escaping, leading to a near-100% success rate in code delivery.
 
 ## Consequences
-*   **Execution Rate**: Moves the model from "Guess-and-Check" to "Plan-and-Verify," significantly increasing reliability.
-*   **Transparency**: The user has a live view of the agent's progress via the Mission Control UI.
-*   **Speed**: Faster perceived time-to-completion by eliminating redundant "What's in this file?" turns.
+*   **Reliability**: Eliminates the most common cause of agent failure: malformed JSON strings.
+*   **Speed**: Faster generation as the model doesn't have to compute escaping logic.
+*   **Developer Experience**: The communication log becomes human-readable markdown.

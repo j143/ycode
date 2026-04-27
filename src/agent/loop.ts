@@ -3,7 +3,7 @@ import ora from 'ora';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import { AgentContext } from './context.js';
-import { toolDefinitions, executeTool } from '../tools/index.js';
+import { executeTool } from '../tools/index.js';
 import { rl } from '../utils/ui.js';
 import { requestPermission } from '../utils/permissions.js';
 
@@ -38,7 +38,6 @@ export async function startAgentLoop(initialPrompt?: string) {
     // Pre-emptive Context Injection
     const fileRegex = /(?:^|\s)((?:src|docs|test|utils|ui|agent|tools|mcp)\/[\w\-\./]+\.(?:ts|tsx|js|jsx|json|md|txt))(?:\s|$)/g;
     const matches = [...nextUserPrompt.matchAll(fileRegex)];
-    
     let injectedContext = '';
     if (matches.length > 0) {
       for (const match of matches) {
@@ -64,9 +63,7 @@ export async function startAgentLoop(initialPrompt?: string) {
 }
 
 async function runAgentTurn(context: AgentContext, depth: number = 0) {
-  if (depth > 5) {
-    return { error: 'Maximum sub-agent recursion depth reached.' };
-  }
+  if (depth > 5) return { error: 'Maximum sub-agent recursion depth reached.' };
 
   const spinner = ora('Agent is thinking...').start();
 
@@ -86,130 +83,97 @@ async function runAgentTurn(context: AgentContext, depth: number = 0) {
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta;
-      if (!delta) continue;
-
-      if (delta.content) {
+      if (delta?.content) {
         fullContent += delta.content;
         process.stdout.write(delta.content);
       }
     }
-    
     process.stdout.write('\n');
-
-    // Add assistant message to context
     context.addMessage({ role: 'assistant', content: fullContent });
 
-    // [STRICT PARSING]
-    const sanitizedContent = fullContent.replace(/```xml\n?|```/g, '');
-    const toolCallRegex = /<tool_call name="([^"]+)">([\s\S]*?)(?:<\/tool_call>|$)/g;
+    // [CODE-FIRST PARSER]
+    const codeBlockRegex = /```([a-z_]+)\s*(.*)\n([\s\S]*?)(?:```|$)/gi;
     let match;
-    const manualToolCalls = [];
+    const toolCalls: {name: string, args: any}[] = [];
 
-    while ((match = toolCallRegex.exec(sanitizedContent)) !== null) {
-      const name = match[1];
-      let rawArgs = match[2].trim();
-      
-      if (!match[0].includes('</tool_call>')) {
-         const lastBrace = rawArgs.lastIndexOf('}');
-         if (lastBrace !== -1) rawArgs = rawArgs.substring(0, lastBrace + 1);
+    while ((match = codeBlockRegex.exec(fullContent)) !== null) {
+      const toolName = match[1].toLowerCase();
+      const lineArg = match[2].trim();
+      const blockContent = match[3].trim();
+
+      let args: any = {};
+      switch (toolName) {
+        case 'write': args = { path: lineArg, content: blockContent }; break;
+        case 'bash': args = { command: blockContent, background: lineArg.includes('bg') }; break;
+        case 'plan': args = { action: 'set', steps: blockContent.split('\n').map(s => s.trim().replace(/^[\d\-\.\*☑☐\s]+/, '')) }; break;
+        case 'think': args = { thought: blockContent }; break;
+        case 'ls':
+        case 'cat':
+        case 'rm':
+        case 'mkdir':
+        case 'get_type_definitions': args = { path: lineArg, dir: lineArg }; break;
+        case 'search': args = { pattern: lineArg }; break;
+        case 'done': args = { message: blockContent }; break;
+        case 'subagent': args = { task: lineArg || blockContent }; break;
+        case 'edit':
+           const edits = [];
+           const editBlocks = blockContent.split(/<<<< SEARCH|==== REPLACE|>>>>/);
+           for(let i=1; i<editBlocks.length; i+=3) {
+             edits.push({ old_string: editBlocks[i].trim(), new_string: editBlocks[i+1].trim() });
+           }
+           args = { path: lineArg, edits };
+           break;
+        default: continue;
       }
-      
-      if (rawArgs) {
-        manualToolCalls.push({ name, argsRaw: rawArgs });
+      toolCalls.push({ name: toolName === 'plan' ? 'manage_plan' : toolName, args });
+    }
+
+    // Fallback XML
+    if (toolCalls.length === 0) {
+      const xmlRegex = /<tool_call\s+name="([^"]+)">([\s\S]*?)(?:<\/tool_call>|$)/gi;
+      let xmlMatch;
+      while ((xmlMatch = xmlRegex.exec(fullContent)) !== null) {
+        try { toolCalls.push({ name: xmlMatch[1], args: JSON.parse(xmlMatch[2].trim()) }); } catch(e) {}
       }
     }
 
-    // [STRICT OUTPUT ENFORCEMENT]
-    const usingBackticks = /```/.test(fullContent);
-    if (usingBackticks && manualToolCalls.length > 0) {
-      context.addMessage({ 
-        role: 'user', 
-        content: "[SYSTEM] DO NOT wrap tool calls in backticks. Provide them as raw XML. Try again." 
-      });
-      return await runAgentTurn(context, depth);
-    }
-
-    if (manualToolCalls.length > 0) {
-      for (const toolCall of manualToolCalls) {
-        let args = {};
-        try {
-          args = JSON.parse(toolCall.argsRaw);
-        } catch (e) {
-          console.log(chalk.red(`\n[Error parsing arguments for ${toolCall.name}]: ${toolCall.argsRaw}`));
-          context.addMessage({
-            role: 'user',
-            content: `Error parsing arguments for tool ${toolCall.name}. Please ensure you provide valid JSON.`
-          });
-          continue;
-        }
-
-        console.log(chalk.yellow(`\n[Tool Call]: ${toolCall.name}(${JSON.stringify(args)})`));
-        
-        const allowed = await requestPermission(toolCall.name, args);
-        if (!allowed) {
-          console.log(chalk.red(`[Permission Denied]: ${toolCall.name}`));
-          context.addMessage({
-            role: 'user',
-            content: `Tool call ${toolCall.name} was denied by the user.`
-          });
-          continue;
-        }
+    if (toolCalls.length > 0) {
+      for (const toolCall of toolCalls) {
+        console.log(chalk.yellow(`\n[Action]: ${toolCall.name}`));
+        const allowed = await requestPermission(toolCall.name, toolCall.args);
+        if (!allowed) continue;
 
         const runSubagent = async (task: string) => {
-          const currentDepth = depth + 1;
-          console.log(chalk.cyan(`\n[Sub-agent Started (Depth: ${currentDepth})]: ${task}`));
           const subContext = new AgentContext();
-          
-          // Provide some ambient context to the sub-agent
-          const parentHistory = context.getHistory();
-          const contextSummary = parentHistory
-            .filter(m => m.role === 'user')
-            .slice(-3)
-            .map(m => m.content)
-            .join('\n');
-
-          subContext.addMessage({ 
-            role: 'user', 
-            content: `Context from parent agent:\n${contextSummary}\n\nObjective: ${task}\n\nWork on this task and use the 'done' tool when you are finished. If you cannot complete the task, explain why and use 'done'.` 
-          });
-          
+          subContext.addMessage({ role: 'user', content: `Objective: ${task}\n\nWork on this task and use the 'done' tool when you are finished.` });
           let result: any = null;
-          // Sub-agent loop
           while (!result) {
             const turnResult = await runAgentTurn(subContext, depth + 1);
-            if (turnResult && (turnResult as any).status === "Task completed.") {
-              result = turnResult;
-            } else if (turnResult && (turnResult as any).error) {
-              result = turnResult;
-            } else if (!turnResult) {
-              // Agent responded without tool calls
-              const history = subContext.getHistory();
-              const lastAssistantMsg = history[history.length - 1];
-              result = { 
-                success: false, 
-                message: lastAssistantMsg.role === 'assistant' ? lastAssistantMsg.content : 'Sub-agent stopped without calling done.' 
-              };
+            if (turnResult && (turnResult as any).status === "Task completed.") result = turnResult;
+            else if (turnResult && (turnResult as any).error) result = turnResult;
+            else if (!turnResult) {
+               const history = subContext.getHistory();
+               const lastAssistantMsg = history[history.length - 1];
+               result = { success: false, message: lastAssistantMsg.role === 'assistant' ? lastAssistantMsg.content : 'Sub-agent stopped.' };
             }
           }
-          console.log(chalk.cyan(`\n[Sub-agent Finished (Depth: ${currentDepth})]: ${task}`));
           return result;
         };
 
-        const toolResult = await executeTool(toolCall.name, args, runSubagent);
-        
-        console.log(chalk.green(`[Tool Result]: ${JSON.stringify(toolResult).substring(0, 100)}${JSON.stringify(toolResult).length > 100 ? '...' : ''}`));
+        let toolResult = await executeTool(toolCall.name, toolCall.args, runSubagent);
 
-        context.addMessage({
-          role: 'user',
-          content: `[SYSTEM] Tool ${toolCall.name} returned: ${JSON.stringify(toolResult)}`
-        });
-
-        if (toolCall.name === 'done') {
-           return toolResult;
+        // Auto-Linting
+        if ((toolCall.name === 'edit' || toolCall.name === 'write') && !toolResult.error) {
+           const lintResult = await executeTool('bash', { command: 'npm run build' });
+           if (lintResult.error || (lintResult.stderr && lintResult.stderr.includes('error'))) {
+             toolResult = { success: false, error: 'Build failed after changes.', details: lintResult.stderr || lintResult.error };
+           }
         }
+        
+        console.log(chalk.green(`[Result]: ${JSON.stringify(toolResult).substring(0, 100)}...`));
+        context.addMessage({ role: 'user', content: `[SYSTEM] Tool ${toolCall.name} returned: ${JSON.stringify(toolResult)}` });
+        if (toolCall.name === 'done') return toolResult;
       }
-
-      // Automatically run another turn to process tool results
       return await runAgentTurn(context, depth);
     }
   } catch (error: any) {

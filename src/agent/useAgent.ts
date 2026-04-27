@@ -90,7 +90,6 @@ export function useAgent(isAutoMode: boolean = false) {
     const currentContext = externalContext || contextRef.current;
 
     if (userPrompt) {
-      // ... (pre-emptive injection logic unchanged)
       const fileRegex = /(?:^|\s)((?:src|docs|test|utils|ui|agent|tools|mcp)\/[\w\-\./]+\.(?:ts|tsx|js|jsx|json|md|txt))(?:\s|$)/g;
       const matches = [...userPrompt.matchAll(fileRegex)];
       let injectedContext = '';
@@ -121,7 +120,7 @@ export function useAgent(isAutoMode: boolean = false) {
         stream: true,
         num_ctx: 4096,
         temperature: 0.1,
-      } as any) as any; // Cast to any to bypass standard check but maintain loopability
+      } as any) as any;
 
       let lastUpdateTime = Date.now();
       for await (const chunk of stream) {
@@ -141,62 +140,70 @@ export function useAgent(isAutoMode: boolean = false) {
       currentContext.addMessage({ role: 'assistant', content: fullContent });
       stopThinking();
 
-      // [RESILIENT PARSING] Extract tool calls even if unclosed
-      const sanitizedContent = fullContent.replace(/```xml\n?|```/g, '');
-      const toolCallRegex = /<tool_call\s+name="([^"]+)">([\s\S]*?)(?:<\/tool_call>|$)/gi;
-      let match;
-      const manualToolCalls = [];
+      // [CODE-FIRST PARSER] 
+      const codeBlockRegex = /```([a-z_]+)\s*(.*)\n([\s\S]*?)(?:```|$)/gi;
+      let blockMatch;
+      const parsedToolCalls: {name: string, args: any}[] = [];
 
-      while ((match = toolCallRegex.exec(sanitizedContent)) !== null) {
-        const name = match[1];
-        let rawArgs = match[2].trim();
-        
-        // If unclosed, try to find the last closing brace of the JSON
-        if (!match[0].toLowerCase().includes('</tool_call>')) {
-           const lastBrace = rawArgs.lastIndexOf('}');
-           if (lastBrace !== -1) rawArgs = rawArgs.substring(0, lastBrace + 1);
+      while ((blockMatch = codeBlockRegex.exec(fullContent)) !== null) {
+        const toolName = blockMatch[1].toLowerCase();
+        const lineArg = blockMatch[2].trim();
+        const blockContent = blockMatch[3].trim();
+
+        let args: any = {};
+        switch (toolName) {
+          case 'write': args = { path: lineArg, content: blockContent }; break;
+          case 'bash': args = { command: blockContent, background: lineArg.includes('bg') }; break;
+          case 'plan': args = { action: 'set', steps: blockContent.split('\n').map(s => s.trim().replace(/^[\d\-\.\*☑☐\s]+/, '')) }; break;
+          case 'think': args = { thought: blockContent }; break;
+          case 'ls':
+          case 'cat':
+          case 'rm':
+          case 'mkdir':
+          case 'get_type_definitions': args = { path: lineArg, dir: lineArg }; break;
+          case 'search': args = { pattern: lineArg }; break;
+          case 'done': args = { message: blockContent }; break;
+          case 'subagent': args = { task: lineArg || blockContent }; break;
+          case 'edit':
+             // Parse Search/Replace blocks
+             const edits = [];
+             const editBlocks = blockContent.split(/<<<< SEARCH|==== REPLACE|>>>>/);
+             for(let i=1; i<editBlocks.length; i+=3) {
+               edits.push({ old_string: editBlocks[i].trim(), new_string: editBlocks[i+1].trim() });
+             }
+             args = { path: lineArg, edits };
+             break;
+          default:
+            // Maybe it's just a regular code block (typescript, python, etc)
+            continue;
         }
-        
-        if (rawArgs || name.toLowerCase() === 'done') {
-          manualToolCalls.push({ name, argsRaw: rawArgs || '{}' });
+        parsedToolCalls.push({ name: toolName === 'plan' ? 'manage_plan' : toolName, args });
+      }
+
+      // Legacy fallback for XML
+      if (parsedToolCalls.length === 0) {
+        const xmlRegex = /<tool_call\s+name="([^"]+)">([\s\S]*?)(?:<\/tool_call>|$)/gi;
+        let xmlMatch;
+        while ((xmlMatch = xmlRegex.exec(fullContent)) !== null) {
+          try { parsedToolCalls.push({ name: xmlMatch[1], args: JSON.parse(xmlMatch[2].trim()) }); } catch(e) {}
         }
       }
 
-      // [STRICT OUTPUT ENFORCEMENT]
-      const usingBackticks = /```/.test(fullContent);
-      if (usingBackticks && manualToolCalls.length > 0) {
-        const hint = "[SYSTEM] DO NOT wrap tool calls in markdown backticks. Always provide them as raw text. Please try again correctly.";
-        currentContext.addMessage({ role: 'user', content: hint });
-        return await runTurn(undefined, externalContext, depth);
-      }
-
-      const hasCodeBlock = /```[\s\S]*?```/.test(fullContent);
-      if (hasCodeBlock && manualToolCalls.length === 0 && !externalContext) {
-        const hint = "[SYSTEM] You provided a code block but no tool call. Use 'write' or 'edit' to deliver code. DO NOT just show it to me. Try again.";
-        currentContext.addMessage({ role: 'user', content: hint });
-        return await runTurn(undefined, externalContext, depth);
-      }
-
-      if (manualToolCalls.length > 0) {
+      if (parsedToolCalls.length > 0) {
         let anyExecuted = false;
         let finalResult = null;
 
-        for (const toolCall of manualToolCalls) {
-          let args = {};
-          try {
-            args = JSON.parse(toolCall.argsRaw);
-          } catch (e) { continue; }
-
+        for (const toolCall of parsedToolCalls) {
           const actionId = Math.random().toString(36).substring(7);
-          const newAction: Action = { id: actionId, name: toolCall.name, args, status: 'pending' };
+          const newAction: Action = { id: actionId, name: toolCall.name, args: toolCall.args, status: 'pending' };
           if (!externalContext) setActions(prev => [...prev, newAction]);
 
-          const isReadOnly = ['ls', 'cat', 'search', 'think', 'subagent'].includes(toolCall.name);
+          const isReadOnly = ['ls', 'cat', 'search', 'think', 'subagent', 'manage_plan', 'get_type_definitions'].includes(toolCall.name);
           let allowed = isReadOnly || isAutoMode;
 
           if (!allowed) {
             allowed = await new Promise<boolean>(resolve => {
-              setPendingToolCall({ name: toolCall.name, args, resolve });
+              setPendingToolCall({ name: toolCall.name, args: toolCall.args, resolve });
             });
             setPendingToolCall(null);
           }
@@ -223,18 +230,13 @@ export function useAgent(isAutoMode: boolean = false) {
               return result;
             };
 
-            let toolResult = await executeTool(toolCall.name, args, runSubagentInternal);
+            let toolResult = await executeTool(toolCall.name, toolCall.args, runSubagentInternal);
             
-            // Deterministic Guardrail: Auto-Linting after edit/write
+            // Auto-Linting
             if ((toolCall.name === 'edit' || toolCall.name === 'write') && !toolResult.error) {
-               if (!externalContext) updateAction(actionId, { status: 'running' });
                const lintResult = await executeTool('bash', { command: 'npm run build' });
                if (lintResult.error || (lintResult.stderr && lintResult.stderr.includes('error'))) {
-                 toolResult = { 
-                   success: false, 
-                   error: 'Build failed after changes. Please fix the following errors:',
-                   details: lintResult.stderr || lintResult.error 
-                 };
+                 toolResult = { success: false, error: 'Build failed after changes.', details: lintResult.stderr || lintResult.error };
                }
             }
 
