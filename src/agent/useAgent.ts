@@ -141,19 +141,27 @@ export function useAgent(isAutoMode: boolean = false) {
       currentContext.addMessage({ role: 'assistant', content: fullContent });
       stopThinking();
 
-      // Parse manual tool calls
+      // [STRICT PARSING] Check for tool calls even if wrapped in markdown (and then warn)
+      const sanitizedContent = fullContent.replace(/```xml\n?|```/g, '');
       const toolCallRegex = /<tool_call name="([^"]+)">([\s\S]*?)<\/tool_call>/g;
       let match;
       const manualToolCalls = [];
 
-      while ((match = toolCallRegex.exec(fullContent)) !== null) {
+      while ((match = toolCallRegex.exec(sanitizedContent)) !== null) {
         manualToolCalls.push({ name: match[1], argsRaw: match[2].trim() });
       }
 
       // [STRICT OUTPUT ENFORCEMENT]
+      const usingBackticks = /```/.test(fullContent);
+      if (usingBackticks && manualToolCalls.length > 0) {
+        const hint = "[SYSTEM] DO NOT wrap tool calls in markdown backticks. Always provide them as raw text. Please try again correctly.";
+        currentContext.addMessage({ role: 'user', content: hint });
+        return await runTurn(undefined, externalContext, depth);
+      }
+
       const hasCodeBlock = /```[\s\S]*?```/.test(fullContent);
       if (hasCodeBlock && manualToolCalls.length === 0 && !externalContext) {
-        const hint = "[SYSTEM] I noticed you provided a code block but did not use a tool to create or edit a file. If your intent was to modify the project, you MUST use the 'write' or 'edit' tool. Please try again with a tool call.";
+        const hint = "[SYSTEM] You provided a code block but no tool call. Use 'write' or 'edit' to deliver code. DO NOT just show it to me. Try again.";
         currentContext.addMessage({ role: 'user', content: hint });
         return await runTurn(undefined, externalContext, depth);
       }

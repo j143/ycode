@@ -99,16 +99,24 @@ async function runAgentTurn(context: AgentContext, depth: number = 0) {
     // Add assistant message to context
     context.addMessage({ role: 'assistant', content: fullContent });
 
-    // Parse manual tool calls: <tool_call name="tool_name">{"args": "..."}</tool_call>
+    // [STRICT PARSING]
+    const sanitizedContent = fullContent.replace(/```xml\n?|```/g, '');
     const toolCallRegex = /<tool_call name="([^"]+)">([\s\S]*?)<\/tool_call>/g;
     let match;
     const manualToolCalls = [];
 
-    while ((match = toolCallRegex.exec(fullContent)) !== null) {
-      manualToolCalls.push({
-        name: match[1],
-        argsRaw: match[2].trim()
+    while ((match = toolCallRegex.exec(sanitizedContent)) !== null) {
+      manualToolCalls.push({ name: match[1], argsRaw: match[2].trim() });
+    }
+
+    // [STRICT OUTPUT ENFORCEMENT]
+    const usingBackticks = /```/.test(fullContent);
+    if (usingBackticks && manualToolCalls.length > 0) {
+      context.addMessage({ 
+        role: 'user', 
+        content: "[SYSTEM] DO NOT wrap tool calls in backticks. Provide them as raw XML. Try again." 
       });
+      return await runAgentTurn(context, depth);
     }
 
     if (manualToolCalls.length > 0) {
