@@ -21,8 +21,10 @@ const MessageItem = React.memo(({ msg, isLatest }: { msg: any; isLatest: boolean
   }
 
   if (isAssistant) {
-    const thoughtMatch = msg.content.match(/<tool_call name="think">([\s\S]*?)<\/tool_call>/);
-    const contentToDisplay = msg.content.replace(/<tool_call name="[^"]+">([\s\S]*?)<\/tool_call>/g, '').trim();
+    const thoughtMatch = msg.content.match(/<tool_call name="think">([\s\S]*?)(?:<\/tool_call>|$)/);
+    
+    // Greedy strip all tool calls (handles unclosed tags)
+    const contentToDisplay = msg.content.replace(/<tool_call name="[^"]+">([\s\S]*?)(?:<\/tool_call>|$)/g, '').trim();
 
     return (
       <Box flexDirection="column" marginBottom={1}>
@@ -30,7 +32,7 @@ const MessageItem = React.memo(({ msg, isLatest }: { msg: any; isLatest: boolean
         <Box paddingLeft={1} flexDirection="column">
           {thoughtMatch && (
             <Box borderStyle="single" borderColor="blue" paddingX={1} marginBottom={0}>
-              <Text italic color="blue" dimColor={!isLatest}>thought: {JSON.parse(thoughtMatch[1].trim()).thought}</Text>
+              <Text italic color="blue" dimColor={!isLatest}>thought: {JSON.parse(thoughtMatch[1].trim().includes('}') ? thoughtMatch[1].trim() : thoughtMatch[1].trim() + '}').thought}</Text>
             </Box>
           )}
           {contentToDisplay && (

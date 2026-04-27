@@ -101,12 +101,22 @@ async function runAgentTurn(context: AgentContext, depth: number = 0) {
 
     // [STRICT PARSING]
     const sanitizedContent = fullContent.replace(/```xml\n?|```/g, '');
-    const toolCallRegex = /<tool_call name="([^"]+)">([\s\S]*?)<\/tool_call>/g;
+    const toolCallRegex = /<tool_call name="([^"]+)">([\s\S]*?)(?:<\/tool_call>|$)/g;
     let match;
     const manualToolCalls = [];
 
     while ((match = toolCallRegex.exec(sanitizedContent)) !== null) {
-      manualToolCalls.push({ name: match[1], argsRaw: match[2].trim() });
+      const name = match[1];
+      let rawArgs = match[2].trim();
+      
+      if (!match[0].includes('</tool_call>')) {
+         const lastBrace = rawArgs.lastIndexOf('}');
+         if (lastBrace !== -1) rawArgs = rawArgs.substring(0, lastBrace + 1);
+      }
+      
+      if (rawArgs) {
+        manualToolCalls.push({ name, argsRaw: rawArgs });
+      }
     }
 
     // [STRICT OUTPUT ENFORCEMENT]
