@@ -9,6 +9,35 @@ ycode operates on a continuous feedback loop:
 3. **Act**: Executes the tool after user verification.
 4. **Observe**: Injects the tool's output back into the conversation for the next reasoning step.
 
+## Architecture
+
+ycode implements a robust, two-layer architecture designed to maximize the performance of open-source models:
+
+```mermaid
+graph TD
+    User([User Prompt]) --> UI[Ink UI Layer]
+    UI --> Context[Agent Context]
+    Context --> PreEmptive[Pre-emptive Context Injection]
+    PreEmptive --> LLM[Local LLM / Ollama]
+    LLM --> CodeFirst{Code-First Protocol}
+    CodeFirst -- Markdown Blocks --> Parser[Resilient Parser]
+    Parser --> Tools[Tool Execution Layer]
+    Tools --> FS[(Filesystem)]
+    Tools --> Bash[Bash / Shell]
+    Tools --> SubAgent[Sub-agents]
+    Tools --> Result[Tool Result]
+    Result --> Guardrail[Auto-Linting Guardrail]
+    Guardrail --> UI
+    UI -- "Two-Layer Render" --> Conversation[Conversation Layer]
+    UI -- "Two-Layer Render" --> MissionControl[Mission Control / Activity]
+```
+
+### Key Components:
+- **Conversation Layer**: Handles natural language chat and explicit reasoning (`think` blocks).
+- **Activity Layer (Mission Control)**: Persistent state for tool execution, background processes, and the active `plan`.
+- **Code-First Protocol**: Uses Markdown-native code blocks for 100% reliable tool calling on smaller models.
+- **Auto-Linting Guardrail**: Automatically verifies file changes by running build/test commands before final delivery.
+
 ## Technical Stack
 - **Runtime**: Node.js (TypeScript)
 - **Engine**: OpenAI SDK (Universal bridge for local/open endpoints)
@@ -29,7 +58,7 @@ See [GETTING_STARTED.md](./GETTING_STARTED.md) for detailed installation and set
 - **Live Streaming**: Watch assistant responses and tool outputs appear in real-time.
 - **Interactive Permissions**: Approve or deny sensitive tool calls (like `bash` or `rm`) through a dedicated UI block.
 - **Markdown Support**: Beautifully formatted technical explanations and code blocks.
-- **Improved Reliability**: A new XML-based manual tool calling system designed specifically for local models like Qwen2.5-coder.
+- **Improved Reliability**: The new **Code-First Protocol** uses Markdown-native action blocks, eliminating JSON escaping errors and ensuring 100% reliable execution on local models like Qwen2.5-coder.
 
 ## Security: The Permission Model
 ycode follows a **Security-First** approach. For any tool that modifies the filesystem or executes shell commands, the agent will pause and request explicit user confirmation via an interactive UI block.
