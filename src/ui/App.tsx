@@ -167,6 +167,56 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
     runTurn(finalPrompt);
   };
 
+  const conversationLayer = React.useMemo(() => (
+    <Box flexDirection="column" width="65%" marginRight={2}>
+      <Box flexDirection="column" flexGrow={1}>
+        {messages.slice(-6).map((msg, i) => <MessageItem key={i} msg={msg} />)}
+        {streamingContent !== null && <MessageItem msg={{ role: 'assistant', content: streamingContent }} />}
+      </Box>
+    </Box>
+  ), [messages, streamingContent]);
+
+  const activityLayer = React.useMemo(() => (
+    <Box flexDirection="column" width="35%" borderStyle="double" borderColor="dim" paddingX={1}>
+      <Text bold color="cyan">MISSION CONTROL</Text>
+      
+      <Box borderStyle="round" borderColor="blue" marginTop={1} paddingX={1} flexDirection="column">
+        <Text bold color="blue">PLAN</Text>
+        {actions.filter(a => a.name === 'manage_plan' && a.status === 'success').slice(-1).map(a => (
+          <Box key={a.id} flexDirection="column">
+            {a.result.plan.steps.map((step: string, idx: number) => (
+              <Text key={idx} color={a.result.plan.completed.includes(idx) ? 'green' : 'white'} wrap="truncate">
+                {a.result.plan.completed.includes(idx) ? '☑' : '☐'} {step}
+              </Text>
+            ))}
+          </Box>
+        ))}
+        {actions.filter(a => a.name === 'manage_plan').length === 0 && (
+          <Text dimColor italic>No active plan.</Text>
+        )}
+      </Box>
+
+      <Box flexDirection="column" marginTop={1}>
+        <Text bold color="cyan">ACTIVITY</Text>
+        {actions.filter(a => a.name !== 'manage_plan').slice(-4).map((action) => <ActionItem key={action.id} action={action} />)}
+        {actions.length === 0 && <Text dimColor italic>No actions yet.</Text>}
+      </Box>
+      
+      <Box borderStyle="single" borderColor="dim" marginTop={1} paddingX={1}>
+        <Text bold color="yellow">PROCESSES</Text>
+        {actions.filter(a => a.name === 'bash' && a.args.background && a.status === 'success').map((a, i) => (
+          <Box key={i} flexDirection="row" justifyContent="space-between">
+            <Text dimColor>• {a.args.command.substring(0, 15)}...</Text>
+            <Text color="green">PID:{a.result?.pid}</Text>
+          </Box>
+        ))}
+        {actions.filter(a => a.name === 'bash' && a.args.background && a.status === 'success').length === 0 && (
+          <Text dimColor italic>No bg processes.</Text>
+        )}
+      </Box>
+    </Box>
+  ), [actions]);
+
   return (
     <Box flexDirection="column" padding={1} minHeight={10}>
       {/* Header */}
@@ -190,53 +240,8 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
       </Box>
 
       <Box flexDirection="row" flexGrow={1} marginBottom={1}>
-        {/* Layer 1: Conversation (Windowed to last 6) */}
-        <Box flexDirection="column" width="65%" marginRight={2}>
-          <Box flexDirection="column" flexGrow={1}>
-            {messages.slice(-6).map((msg, i) => <MessageItem key={i} msg={msg} />)}
-            {streamingContent !== null && <MessageItem msg={{ role: 'assistant', content: streamingContent }} />}
-          </Box>
-        </Box>
-
-        {/* Layer 2: Activity / Mission Control (Windowed) */}
-        <Box flexDirection="column" width="35%" borderStyle="double" borderColor="dim" paddingX={1}>
-          <Text bold color="cyan">MISSION CONTROL</Text>
-          
-          <Box borderStyle="round" borderColor="blue" marginTop={1} paddingX={1} flexDirection="column">
-            <Text bold color="blue">PLAN</Text>
-            {actions.filter(a => a.name === 'manage_plan' && a.status === 'success').slice(-1).map(a => (
-              <Box key={a.id} flexDirection="column">
-                {a.result.plan.steps.map((step: string, idx: number) => (
-                  <Text key={idx} color={a.result.plan.completed.includes(idx) ? 'green' : 'white'} wrap="truncate">
-                    {a.result.plan.completed.includes(idx) ? '☑' : '☐'} {step}
-                  </Text>
-                ))}
-              </Box>
-            ))}
-            {actions.filter(a => a.name === 'manage_plan').length === 0 && (
-              <Text dimColor italic>No active plan.</Text>
-            )}
-          </Box>
-
-          <Box flexDirection="column" marginTop={1}>
-            <Text bold color="cyan">ACTIVITY</Text>
-            {actions.filter(a => a.name !== 'manage_plan').slice(-4).map((action) => <ActionItem key={action.id} action={action} />)}
-            {actions.length === 0 && <Text dimColor italic>No actions yet.</Text>}
-          </Box>
-          
-          <Box borderStyle="single" borderColor="dim" marginTop={1} paddingX={1}>
-            <Text bold color="yellow">PROCESSES</Text>
-            {actions.filter(a => a.name === 'bash' && a.args.background && a.status === 'success').map((a, i) => (
-              <Box key={i} flexDirection="row" justifyContent="space-between">
-                <Text dimColor>• {a.args.command.substring(0, 15)}...</Text>
-                <Text color="green">PID:{a.result?.pid}</Text>
-              </Box>
-            ))}
-            {actions.filter(a => a.name === 'bash' && a.args.background && a.status === 'success').length === 0 && (
-              <Text dimColor italic>No bg processes.</Text>
-            )}
-          </Box>
-        </Box>
+        {conversationLayer}
+        {activityLayer}
       </Box>
 
       {/* Tool Permission */}
