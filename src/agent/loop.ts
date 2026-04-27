@@ -75,7 +75,9 @@ async function runAgentTurn(context: AgentContext, depth: number = 0) {
       model: getModel(),
       messages: context.getHistory(),
       stream: true,
-    });
+      num_ctx: 4096,
+      temperature: 0.1,
+    } as any) as any;
 
     spinner.stop();
 

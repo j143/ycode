@@ -119,7 +119,9 @@ export function useAgent(isAutoMode: boolean = false) {
         model: getModel(),
         messages: currentContext.getHistory(),
         stream: true,
-      });
+        num_ctx: 4096,
+        temperature: 0.1,
+      } as any) as any; // Cast to any to bypass standard check but maintain loopability
 
       let lastUpdateTime = Date.now();
       for await (const chunk of stream) {
