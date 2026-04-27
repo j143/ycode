@@ -190,15 +190,15 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
       </Box>
 
       <Box flexDirection="row" flexGrow={1} marginBottom={1}>
-        {/* Layer 1: Conversation */}
+        {/* Layer 1: Conversation (Windowed to last 6) */}
         <Box flexDirection="column" width="65%" marginRight={2}>
           <Box flexDirection="column" flexGrow={1}>
-            {messages.map((msg, i) => <MessageItem key={i} msg={msg} />)}
+            {messages.slice(-6).map((msg, i) => <MessageItem key={i} msg={msg} />)}
             {streamingContent !== null && <MessageItem msg={{ role: 'assistant', content: streamingContent }} />}
           </Box>
         </Box>
 
-        {/* Layer 2: Activity / Actions */}
+        {/* Layer 2: Activity / Mission Control (Windowed) */}
         <Box flexDirection="column" width="35%" borderStyle="double" borderColor="dim" paddingX={1}>
           <Text bold color="cyan">MISSION CONTROL</Text>
           
@@ -207,7 +207,7 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
             {actions.filter(a => a.name === 'manage_plan' && a.status === 'success').slice(-1).map(a => (
               <Box key={a.id} flexDirection="column">
                 {a.result.plan.steps.map((step: string, idx: number) => (
-                  <Text key={idx} color={a.result.plan.completed.includes(idx) ? 'green' : 'white'}>
+                  <Text key={idx} color={a.result.plan.completed.includes(idx) ? 'green' : 'white'} wrap="truncate">
                     {a.result.plan.completed.includes(idx) ? '☑' : '☐'} {step}
                   </Text>
                 ))}
@@ -220,7 +220,8 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
 
           <Box flexDirection="column" marginTop={1}>
             <Text bold color="cyan">ACTIVITY</Text>
-            {actions.slice(-3).map((action) => <ActionItem key={action.id} action={action} />)}
+            {actions.filter(a => a.name !== 'manage_plan').slice(-4).map((action) => <ActionItem key={action.id} action={action} />)}
+            {actions.length === 0 && <Text dimColor italic>No actions yet.</Text>}
           </Box>
           
           <Box borderStyle="single" borderColor="dim" marginTop={1} paddingX={1}>
