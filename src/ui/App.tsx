@@ -5,8 +5,8 @@ import Spinner from 'ink-spinner';
 import { useAgent } from '../agent/useAgent.js';
 import { Markdown } from './components/Markdown.js';
 
-const MessageItem = React.memo(({ msg, isLatest }: { msg: any; isLatest: boolean }) => {
-  if (msg.content === '' && msg.role === 'assistant') return null;
+const MessageItem = React.memo(({ msg, isLatest, isStreaming }: { msg: any; isLatest: boolean; isStreaming?: boolean }) => {
+  if (msg.content === '' && msg.role === 'assistant' && !isStreaming) return null;
   
   const isSystem = msg.content.startsWith('[SYSTEM]');
   const isAssistant = msg.role === 'assistant';
@@ -23,13 +23,12 @@ const MessageItem = React.memo(({ msg, isLatest }: { msg: any; isLatest: boolean
   if (isAssistant) {
     const thoughtMatch = msg.content.match(/```think\n([\s\S]*?)(?:```|$)/i) || msg.content.match(/<tool_call\s+name="think">([\s\S]*?)(?:<\/tool_call>|$)/i);
     
-    // Greedy strip both Code-First and XML tool calls
     const contentToDisplay = msg.content
       .replace(/```(?:write|bash|edit|plan|ls|cat|rm|mkdir|search|get_type_definitions|subagent|done|think).*?\n([\s\S]*?)(?:```|$)/gi, '')
       .replace(/<tool_call\s+name="[^"]+">([\s\S]*?)(?:<\/tool_call>|$)/gi, '')
       .trim();
 
-    if (!contentToDisplay && !thoughtMatch) return null;
+    if (!contentToDisplay && !thoughtMatch && !isStreaming) return null;
 
     return (
       <Box flexDirection="column" marginBottom={1}>
@@ -48,13 +47,15 @@ const MessageItem = React.memo(({ msg, isLatest }: { msg: any; isLatest: boolean
               </Text>
             </Box>
           )}
-          {contentToDisplay && (
+          {contentToDisplay ? (
             <Box>
               <Text dimColor={!isLatest}>
                 <Markdown>{contentToDisplay}</Markdown>
               </Text>
             </Box>
-          )}
+          ) : isStreaming && !thoughtMatch ? (
+            <Text italic dimColor>executing actions...</Text>
+          ) : null}
         </Box>
       </Box>
     );
@@ -151,10 +152,10 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
 
   const conversationLayer = React.useMemo(() => (
     <Box flexDirection="column" width="65%" marginRight={2}>
-      {messages.slice(-5).map((msg, i) => (
-        <MessageItem key={i} msg={msg} isLatest={i === Math.min(messages.length, 5) - 1 && streamingContent === null} />
+      {messages.slice(-10).map((msg, i, arr) => (
+        <MessageItem key={i} msg={msg} isLatest={i === arr.length - 1 && streamingContent === null} />
       ))}
-      {streamingContent !== null && <MessageItem msg={{ role: 'assistant', content: streamingContent }} isLatest={true} />}
+      {streamingContent !== null && <MessageItem msg={{ role: 'assistant', content: streamingContent }} isLatest={true} isStreaming={true} />}
     </Box>
   ), [messages, streamingContent]);
 
