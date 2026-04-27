@@ -143,7 +143,7 @@ export function useAgent(isAutoMode: boolean = false) {
 
       // [RESILIENT PARSING] Extract tool calls even if unclosed
       const sanitizedContent = fullContent.replace(/```xml\n?|```/g, '');
-      const toolCallRegex = /<tool_call name="([^"]+)">([\s\S]*?)(?:<\/tool_call>|$)/g;
+      const toolCallRegex = /<tool_call\s+name="([^"]+)">([\s\S]*?)(?:<\/tool_call>|$)/gi;
       let match;
       const manualToolCalls = [];
 
@@ -152,13 +152,13 @@ export function useAgent(isAutoMode: boolean = false) {
         let rawArgs = match[2].trim();
         
         // If unclosed, try to find the last closing brace of the JSON
-        if (!match[0].includes('</tool_call>')) {
+        if (!match[0].toLowerCase().includes('</tool_call>')) {
            const lastBrace = rawArgs.lastIndexOf('}');
            if (lastBrace !== -1) rawArgs = rawArgs.substring(0, lastBrace + 1);
         }
         
-        if (rawArgs) {
-          manualToolCalls.push({ name, argsRaw: rawArgs });
+        if (rawArgs || name.toLowerCase() === 'done') {
+          manualToolCalls.push({ name, argsRaw: rawArgs || '{}' });
         }
       }
 

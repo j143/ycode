@@ -21,10 +21,16 @@ const MessageItem = React.memo(({ msg, isLatest }: { msg: any; isLatest: boolean
   }
 
   if (isAssistant) {
-    const thoughtMatch = msg.content.match(/<tool_call name="think">([\s\S]*?)(?:<\/tool_call>|$)/);
+    const thoughtMatch = msg.content.match(/<tool_call\s+name="think">([\s\S]*?)(?:<\/tool_call>|$)/i);
     
-    // Greedy strip all tool calls (handles unclosed tags)
-    const contentToDisplay = msg.content.replace(/<tool_call name="[^"]+">([\s\S]*?)(?:<\/tool_call>|$)/g, '').trim();
+    // Robustly strip all tool calls (handles malformed/unclosed tags)
+    const contentToDisplay = msg.content
+      .replace(/<tool_call\s+name="[^"]+">([\s\S]*?)(?:<\/tool_call>|$)/gi, '')
+      .trim();
+
+    // If there is a thought, we show the block. 
+    // If there is no content and no thought, we hide the entire assistant message.
+    if (!contentToDisplay && !thoughtMatch) return null;
 
     return (
       <Box flexDirection="column" marginBottom={1}>
@@ -32,7 +38,16 @@ const MessageItem = React.memo(({ msg, isLatest }: { msg: any; isLatest: boolean
         <Box paddingLeft={1} flexDirection="column">
           {thoughtMatch && (
             <Box borderStyle="single" borderColor="blue" paddingX={1} marginBottom={0}>
-              <Text italic color="blue" dimColor={!isLatest}>thought: {JSON.parse(thoughtMatch[1].trim().includes('}') ? thoughtMatch[1].trim() : thoughtMatch[1].trim() + '}').thought}</Text>
+              <Text italic color="blue" dimColor={!isLatest}>
+                thought: {(() => {
+                  const raw = thoughtMatch[1].trim();
+                  try {
+                    return JSON.parse(raw.endsWith('}') ? raw : raw + '}').thought;
+                  } catch (e) {
+                    return raw;
+                  }
+                })()}
+              </Text>
             </Box>
           )}
           {contentToDisplay && (
