@@ -57,10 +57,31 @@ export function useAgent(isAutoMode: boolean = false) {
     const currentContext = externalContext || contextRef.current;
 
     if (userPrompt) {
+      // Pre-emptive Context Injection: Scan for file paths in the prompt
+      const fileRegex = /(?:^|\s)((?:src|docs|test|utils|ui|agent|tools|mcp)\/[\w\-\./]+\.(?:ts|tsx|js|jsx|json|md|txt))(?:\s|$)/g;
+      const matches = [...userPrompt.matchAll(fileRegex)];
+      
+      let injectedContext = '';
+      if (matches.length > 0 && !externalContext) {
+        for (const match of matches) {
+          const filePath = match[1];
+          try {
+            const result = await executeTool('cat', { path: filePath });
+            if (result && result.content) {
+              injectedContext += `\n\n--- Content of ${filePath} ---\n${result.content}\n--- End of ${filePath} ---`;
+            }
+          } catch (e) { /* ignore read errors for pre-emptive injection */ }
+        }
+      }
+
+      const finalPromptForModel = injectedContext 
+        ? `${userPrompt}\n\n[PRE-EMPTIVE CONTEXT]\nI have automatically read the following files for you to help with your task:${injectedContext}`
+        : userPrompt;
+
       if (!externalContext) {
         setMessages(prev => [...prev, { role: 'user', content: userPrompt }]);
       }
-      currentContext.addMessage({ role: 'user', content: userPrompt });
+      currentContext.addMessage({ role: 'user', content: finalPromptForModel });
     }
 
     setIsThinking(true);

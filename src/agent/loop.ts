@@ -35,7 +35,28 @@ export async function startAgentLoop(initialPrompt?: string) {
       process.exit(0);
     }
 
-    context.addMessage({ role: 'user', content: nextUserPrompt });
+    // Pre-emptive Context Injection
+    const fileRegex = /(?:^|\s)((?:src|docs|test|utils|ui|agent|tools|mcp)\/[\w\-\./]+\.(?:ts|tsx|js|jsx|json|md|txt))(?:\s|$)/g;
+    const matches = [...nextUserPrompt.matchAll(fileRegex)];
+    
+    let injectedContext = '';
+    if (matches.length > 0) {
+      for (const match of matches) {
+        const filePath = match[1];
+        try {
+          const result = await executeTool('cat', { path: filePath });
+          if (result && (result as any).content) {
+            injectedContext += `\n\n--- Content of ${filePath} ---\n${(result as any).content}\n--- End of ${filePath} ---`;
+          }
+        } catch (e) { /* ignore */ }
+      }
+    }
+
+    const finalPrompt = injectedContext 
+      ? `${nextUserPrompt}\n\n[PRE-EMPTIVE CONTEXT]\nI have automatically read the following files for you to help with your task:${injectedContext}`
+      : nextUserPrompt;
+
+    context.addMessage({ role: 'user', content: finalPrompt });
     nextUserPrompt = undefined;
 
     await runAgentTurn(context);

@@ -50,6 +50,12 @@ Assistant: "I'll update src/ui/App.tsx to include the new button.
 }
 </tool_call>"
 
+## Action Templates
+Use these exact patterns for common tasks:
+- **Serving**: `<tool_call name="bash">{"command": "python3 -m http.server 8080", "background": true}</tool_call>`
+- **Testing**: `<tool_call name="bash">{"command": "npm test"}</tool_call>`
+- **Git Feature**: `1. git checkout -b name, 2. git add ., 3. git commit -m '...'`
+
 ## Finishing a Task
 When you have accomplished the requested task, use the 'done' tool to summarize your work.
 Assistant: "I have finished creating the files.
