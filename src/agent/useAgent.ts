@@ -90,21 +90,32 @@ export function useAgent(isAutoMode: boolean = false) {
     const currentContext = externalContext || contextRef.current;
 
     if (userPrompt) {
-      const fileRegex = /(?:^|\s)((?:src|docs|test|utils|ui|agent|tools|mcp)\/[\w\-\./]+\.(?:ts|tsx|js|jsx|json|md|txt))(?:\s|$)/g;
+      // Environmental Grounding
+      let groundContext = `[ENVIRONMENT]\nCWD: ${ambientInfo.dir}\n`;
+      try {
+        const rootFiles = await executeTool('ls', { path: '.' });
+        if (Array.isArray(rootFiles)) {
+           groundContext += `Root Files: ${rootFiles.map((f: any) => f.name).join(', ')}\n`;
+        }
+      } catch(e) {}
+
+      const fileRegex = /(?:^|\s)([\w\-\./]+\.(?:ts|tsx|js|jsx|json|md|yaml|yml|sh|txt|toml))(?:\s|$)/g;
       const matches = [...userPrompt.matchAll(fileRegex)];
       let injectedContext = '';
       if (matches.length > 0 && !externalContext) {
         for (const match of matches) {
           const filePath = match[1];
-          try {
-            const result = await executeTool('cat', { path: filePath });
-            if (result && result.content) {
-              injectedContext += `\n\n--- Content of ${filePath} ---\n${result.content}\n--- End of ${filePath} ---`;
-            }
-          } catch (e) { /* ignore */ }
+          if (filePath.includes('.') && !filePath.includes('node_modules')) {
+            try {
+              const result = await executeTool('cat', { path: filePath });
+              if (result && result.content) {
+                injectedContext += `\n\n--- Content of ${filePath} ---\n${result.content}\n--- End of ${filePath} ---`;
+              }
+            } catch (e) { /* ignore */ }
+          }
         }
       }
-      const finalPromptForModel = injectedContext ? `${userPrompt}\n\n[PRE-EMPTIVE CONTEXT]\nI have automatically read the following files for you to help with your task:${injectedContext}` : userPrompt;
+      const finalPromptForModel = `${groundContext}\nUser Request: ${userPrompt}${injectedContext ? `\n\n[PRE-EMPTIVE CONTEXT]${injectedContext}` : ''}`;
       if (!externalContext) setMessages(prev => [...prev, { role: 'user', content: userPrompt }]);
       currentContext.addMessage({ role: 'user', content: finalPromptForModel });
     }
