@@ -200,10 +200,27 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
 
         {/* Layer 2: Activity / Actions */}
         <Box flexDirection="column" width="35%" borderStyle="double" borderColor="dim" paddingX={1}>
-          <Text bold color="cyan">ACTIVITY</Text>
+          <Text bold color="cyan">MISSION CONTROL</Text>
+          
+          <Box borderStyle="round" borderColor="blue" marginTop={1} paddingX={1} flexDirection="column">
+            <Text bold color="blue">PLAN</Text>
+            {actions.filter(a => a.name === 'manage_plan' && a.status === 'success').slice(-1).map(a => (
+              <Box key={a.id} flexDirection="column">
+                {a.result.plan.steps.map((step: string, idx: number) => (
+                  <Text key={idx} color={a.result.plan.completed.includes(idx) ? 'green' : 'white'}>
+                    {a.result.plan.completed.includes(idx) ? '☑' : '☐'} {step}
+                  </Text>
+                ))}
+              </Box>
+            ))}
+            {actions.filter(a => a.name === 'manage_plan').length === 0 && (
+              <Text dimColor italic>No active plan.</Text>
+            )}
+          </Box>
+
           <Box flexDirection="column" marginTop={1}>
-            {actions.slice(-5).map((action) => <ActionItem key={action.id} action={action} />)}
-            {actions.length === 0 && <Text dimColor italic>No actions yet.</Text>}
+            <Text bold color="cyan">ACTIVITY</Text>
+            {actions.slice(-3).map((action) => <ActionItem key={action.id} action={action} />)}
           </Box>
           
           <Box borderStyle="single" borderColor="dim" marginTop={1} paddingX={1}>

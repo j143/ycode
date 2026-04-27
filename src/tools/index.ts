@@ -151,6 +151,22 @@ export const toolDefinitions = [
   {
     type: 'function',
     function: {
+      name: 'manage_plan',
+      description: 'Create or update a multi-step plan for complex tasks. This keeps you focused on the overall goal.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['set', 'update', 'get'], description: 'Action to perform' },
+          steps: { type: 'array', items: { type: 'string' }, description: 'The list of steps (for "set")' },
+          completed_step_index: { type: 'number', description: 'The index of the step just completed (for "update")' }
+        },
+        required: ['action']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'get_type_definitions',
       description: 'Extract all TypeScript interface and type definitions from the project to get a high-level map of data structures.',
       parameters: {
@@ -288,6 +304,8 @@ export async function executeTool(name: string, args: any, runSubagent?: (task: 
       return await replace(args.path, args.old_string, args.new_string);
     case 'edit':
       return await edit(args.path, args.edits);
+    case 'manage_plan':
+      return await managePlan(args.action, args.steps, args.completed_step_index);
     case 'get_type_definitions':
       return await getTypeDefinitions(args.dir || 'src');
     case 'think':
@@ -321,6 +339,22 @@ async function runGlob(pattern: string) {
   } catch (error: any) {
     return { error: error.message };
   }
+}
+
+let currentPlan: { steps: string[], completed: number[] } = { steps: [], completed: [] };
+
+async function managePlan(action: 'set' | 'update' | 'get', steps?: string[], completedIndex?: number) {
+  if (action === 'set' && steps) {
+    currentPlan = { steps, completed: [] };
+    return { success: true, plan: currentPlan };
+  }
+  if (action === 'update' && completedIndex !== undefined) {
+    if (!currentPlan.completed.includes(completedIndex)) {
+      currentPlan.completed.push(completedIndex);
+    }
+    return { success: true, plan: currentPlan };
+  }
+  return currentPlan;
 }
 
 async function getTypeDefinitions(dir: string) {
@@ -511,7 +545,6 @@ async function edit(filePath: string, edits: { old_string: string, new_string: s
       const occurrences = content.split(old_string).length - 1;
       
       if (occurrences === 0) {
-        // Intelligence: Fuzzy match to help the model correct itself
         const lines = content.split('\n');
         const searchSnippet = old_string.split('\n')[0].trim();
         const suggestions = lines
