@@ -5,7 +5,7 @@ import Spinner from 'ink-spinner';
 import { useAgent } from '../agent/useAgent.js';
 import { Markdown } from './components/Markdown.js';
 
-const MessageItem = React.memo(({ msg }: { msg: any }) => {
+const MessageItem = React.memo(({ msg, isLatest }: { msg: any; isLatest: boolean }) => {
   if (msg.content === '' && msg.role === 'assistant') return null;
   
   const isSystem = msg.content.startsWith('[SYSTEM]');
@@ -13,33 +13,9 @@ const MessageItem = React.memo(({ msg }: { msg: any }) => {
   const isUser = msg.role === 'user';
 
   if (isSystem) {
-    const toolMatch = msg.content.match(/\[SYSTEM\] Tool (\w+) returned: (.*)/);
-    if (toolMatch) {
-      const [, toolName, resultStr] = toolMatch;
-      let result;
-      try { result = JSON.parse(resultStr); } catch (e) { result = resultStr; }
-
-      return (
-        <Box flexDirection="column" paddingLeft={2} marginBottom={1} borderStyle="round" borderColor="dim" paddingX={1}>
-          <Box flexDirection="row" justifyContent="space-between">
-            <Text bold color="green">✓ {toolName.toUpperCase()}</Text>
-            <Text dimColor>Result</Text>
-          </Box>
-          <Box marginTop={1}>
-            <Text italic dimColor>
-              {typeof result === 'object' 
-                ? JSON.stringify(result).length > 200 
-                  ? JSON.stringify(result).substring(0, 200) + '... (truncated)'
-                  : JSON.stringify(result)
-                : result}
-            </Text>
-          </Box>
-        </Box>
-      );
-    }
     return (
-      <Box paddingLeft={2} marginBottom={1}>
-        <Text dimColor italic>{msg.content}</Text>
+      <Box paddingLeft={1} marginBottom={0}>
+        <Text dimColor italic>› {msg.content.replace('[SYSTEM] ', '')}</Text>
       </Box>
     );
   }
@@ -50,28 +26,36 @@ const MessageItem = React.memo(({ msg }: { msg: any }) => {
 
     return (
       <Box flexDirection="column" marginBottom={1}>
-        <Box><Text bold color="magenta">ycode</Text></Box>
-        <Box paddingLeft={2} flexDirection="column">
+        <Box><Text bold color="magenta" dimColor={!isLatest}>ycode</Text></Box>
+        <Box paddingLeft={1} flexDirection="column">
           {thoughtMatch && (
-            <Box borderStyle="single" borderColor="blue" paddingX={1} marginBottom={1}>
-              <Text italic color="blue">Thought: {JSON.parse(thoughtMatch[1].trim()).thought}</Text>
+            <Box borderStyle="single" borderColor="blue" paddingX={1} marginBottom={0}>
+              <Text italic color="blue" dimColor={!isLatest}>thought: {JSON.parse(thoughtMatch[1].trim()).thought}</Text>
             </Box>
           )}
-          {contentToDisplay && <Markdown>{contentToDisplay}</Markdown>}
+          {contentToDisplay && (
+            <Box>
+              <Text dimColor={!isLatest}>
+                <Markdown>{contentToDisplay}</Markdown>
+              </Text>
+            </Box>
+          )}
         </Box>
       </Box>
     );
   }
 
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Box><Text bold color="blue">You</Text></Box>
-      <Box paddingLeft={2}><Text>{msg.content}</Text></Box>
+    <Box flexDirection="column" marginBottom={0}>
+      <Box><Text bold color="blue" dimColor={!isLatest}>user</Text></Box>
+      <Box paddingLeft={1}>
+        <Text dimColor={!isLatest}>{msg.content}</Text>
+      </Box>
     </Box>
   );
 });
 
-const ActionItem = ({ action }: { action: any }) => {
+const ActionItem = ({ action, isLatest }: { action: any; isLatest: boolean }) => {
   const statusColor = {
     pending: 'yellow',
     running: 'blue',
@@ -83,30 +67,26 @@ const ActionItem = ({ action }: { action: any }) => {
   const icon = {
     pending: '○',
     running: '●',
-    success: '✓',
-    error: '✗',
+    success: '✔',
+    error: '✘',
     denied: '⊘'
   }[action.status as string] || '?';
 
   return (
-    <Box flexDirection="column" paddingX={1} marginBottom={1} borderStyle="round" borderColor={statusColor}>
-      <Box flexDirection="row" justifyContent="space-between">
-        <Text color={statusColor} bold>{icon} {action.name.toUpperCase()}</Text>
-        <Text dimColor italic>{action.status}</Text>
+    <Box flexDirection="column" marginBottom={0}>
+      <Box flexDirection="row">
+        <Text color={statusColor} dimColor={!isLatest}>{icon} </Text>
+        <Text bold dimColor={!isLatest}>{action.name.toLowerCase()}</Text>
+        <Text dimColor> {action.status}</Text>
       </Box>
-      <Box paddingLeft={2} marginTop={1}>
-        {action.name === 'edit' ? (
-          <Text dimColor>File: {action.args.path} ({action.args.edits?.length || 0} changes)</Text>
-        ) : action.name === 'bash' ? (
-          <Text dimColor>Cmd: {action.args.command}</Text>
-        ) : (
-          <Text dimColor>{JSON.stringify(action.args).substring(0, 50)}</Text>
-        )}
-      </Box>
-      {action.status === 'success' && action.result && (
-         <Box marginTop={1} paddingLeft={2}>
-           <Text color="green" dimColor>Result: {JSON.stringify(action.result).substring(0, 100)}...</Text>
-         </Box>
+      {isLatest && (
+        <Box paddingLeft={2}>
+           {action.name === 'edit' ? (
+             <Text dimColor>file: {action.args.path}</Text>
+           ) : action.name === 'bash' ? (
+             <Text dimColor>cmd: {action.args.command}</Text>
+           ) : null}
+        </Box>
       )}
     </Box>
   );
@@ -121,9 +101,7 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
   const { exit } = useApp();
 
   useEffect(() => {
-    if (initialPrompt) {
-      runTurn(initialPrompt);
-    }
+    if (initialPrompt) runTurn(initialPrompt);
   }, []);
 
   useInput((inputStr, key) => {
@@ -146,20 +124,9 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
   });
 
   const handleSubmit = (value: string) => {
-    if (value.toLowerCase() === 'exit') {
-      exit();
-      return;
-    }
-    if (value.toLowerCase() === '/auto') {
-      setIsAutoMode(prev => !prev);
-      setInput('');
-      return;
-    }
-    if (pendingToolCall) {
-      pendingToolCall.resolve(value.toLowerCase() === 'y');
-      setInput('');
-      return;
-    }
+    if (value.toLowerCase() === 'exit') { exit(); return; }
+    if (value.toLowerCase() === '/auto') { setIsAutoMode(prev => !prev); setInput(''); return; }
+    if (pendingToolCall) { pendingToolCall.resolve(value.toLowerCase() === 'y'); setInput(''); return; }
     if (value.trim() !== '') setHistory(prev => [...prev, value]);
     setHistoryIndex(-1);
     const finalPrompt = value.trim() === '' ? 'Please continue.' : value;
@@ -169,74 +136,48 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
 
   const conversationLayer = React.useMemo(() => (
     <Box flexDirection="column" width="65%" marginRight={2}>
-      <Box flexDirection="column" flexGrow={1}>
-        {messages.slice(-6).map((msg, i) => <MessageItem key={i} msg={msg} />)}
-        {streamingContent !== null && <MessageItem msg={{ role: 'assistant', content: streamingContent }} />}
-      </Box>
+      {messages.slice(-5).map((msg, i) => (
+        <MessageItem key={i} msg={msg} isLatest={i === Math.min(messages.length, 5) - 1 && streamingContent === null} />
+      ))}
+      {streamingContent !== null && <MessageItem msg={{ role: 'assistant', content: streamingContent }} isLatest={true} />}
     </Box>
   ), [messages, streamingContent]);
 
   const activityLayer = React.useMemo(() => (
-    <Box flexDirection="column" width="35%" borderStyle="double" borderColor="dim" paddingX={1}>
-      <Text bold color="cyan">MISSION CONTROL</Text>
+    <Box flexDirection="column" width="35%" paddingLeft={1} borderStyle="classic" borderColor="dim">
+      <Text bold color="cyan">ACTIVITY</Text>
       
-      <Box borderStyle="round" borderColor="blue" marginTop={1} paddingX={1} flexDirection="column">
+      <Box marginTop={1} flexDirection="column">
+        {actions.filter(a => a.name !== 'manage_plan').slice(-6).map((action, i, arr) => (
+          <ActionItem key={action.id} action={action} isLatest={i === arr.length - 1} />
+        ))}
+      </Box>
+
+      <Box marginTop={1} flexDirection="column" borderStyle="single" borderColor="blue" paddingX={1}>
         <Text bold color="blue">PLAN</Text>
         {actions.filter(a => a.name === 'manage_plan' && a.status === 'success').slice(-1).map(a => (
           <Box key={a.id} flexDirection="column">
             {a.result.plan.steps.map((step: string, idx: number) => (
               <Text key={idx} color={a.result.plan.completed.includes(idx) ? 'green' : 'white'} wrap="truncate">
-                {a.result.plan.completed.includes(idx) ? '☑' : '☐'} {step}
+                {a.result.plan.completed.includes(idx) ? '☑' : '☐'} {step.toLowerCase()}
               </Text>
             ))}
           </Box>
         ))}
-        {actions.filter(a => a.name === 'manage_plan').length === 0 && (
-          <Text dimColor italic>No active plan.</Text>
-        )}
-      </Box>
-
-      <Box flexDirection="column" marginTop={1}>
-        <Text bold color="cyan">ACTIVITY</Text>
-        {actions.filter(a => a.name !== 'manage_plan').slice(-4).map((action) => <ActionItem key={action.id} action={action} />)}
-        {actions.length === 0 && <Text dimColor italic>No actions yet.</Text>}
-      </Box>
-      
-      <Box borderStyle="single" borderColor="dim" marginTop={1} paddingX={1}>
-        <Text bold color="yellow">PROCESSES</Text>
-        {actions.filter(a => a.name === 'bash' && a.args.background && a.status === 'success').map((a, i) => (
-          <Box key={i} flexDirection="row" justifyContent="space-between">
-            <Text dimColor>• {a.args.command.substring(0, 15)}...</Text>
-            <Text color="green">PID:{a.result?.pid}</Text>
-          </Box>
-        ))}
-        {actions.filter(a => a.name === 'bash' && a.args.background && a.status === 'success').length === 0 && (
-          <Text dimColor italic>No bg processes.</Text>
-        )}
       </Box>
     </Box>
   ), [actions]);
 
   return (
-    <Box flexDirection="column" padding={1} minHeight={10}>
-      {/* Header */}
-      <Box borderStyle="single" borderColor="cyan" paddingX={1} marginBottom={1} flexDirection="row">
-        <Box flexDirection="column">
-          <Text bold>YCODE</Text>
-          <Box flexDirection="row">
-            <Text dimColor>{ambientInfo.dir}</Text>
-            <Text color="cyan"> ({ambientInfo.branch})</Text>
-          </Box>
-        </Box>
+    <Box flexDirection="column" paddingX={1} paddingTop={0} minHeight={12}>
+      {/* Robust Status Bar */}
+      <Box backgroundColor="white" paddingX={1} marginBottom={1}>
+        <Text color="black" bold> YCODE </Text>
+        <Text color="black"> {ambientInfo.dir} </Text>
+        <Text color="black" dimColor>({ambientInfo.branch}) </Text>
         <Box flexGrow={1} />
-        <Box flexDirection="column" alignItems="flex-end">
-          {isAutoMode && <Text bold color="red">[AUTO-MODE ON]</Text>}
-          {isThinking && (
-            <Text color="yellow">
-               <Spinner type="dots" /> <Text italic>Thinking ({thinkingTime}s)...</Text>
-            </Text>
-          )}
-        </Box>
+        {isAutoMode && <Text color="red" bold> AUTO-MODE </Text>}
+        {isThinking && <Text color="blue" bold> THINKING ({thinkingTime}s) </Text>}
       </Box>
 
       <Box flexDirection="row" flexGrow={1} marginBottom={1}>
@@ -244,40 +185,36 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
         {activityLayer}
       </Box>
 
-      {/* Tool Permission */}
+      {/* Action Overlay for Permissions */}
       {pendingToolCall && (
         <Box flexDirection="column" borderStyle="double" borderColor="yellow" paddingX={1} marginBottom={1}>
           <Box flexDirection="row" justifyContent="space-between">
-            <Text bold color="yellow">PERMISSION REQUESTED</Text>
+            <Text bold color="yellow">APPROVE ACTION</Text>
             <Text dimColor>[{pendingToolCall.name}]</Text>
           </Box>
-          <Box flexDirection="column" marginTop={1} paddingLeft={2}>
+          <Box paddingLeft={1} marginTop={1}>
              {pendingToolCall.name === 'edit' ? (
                <Box flexDirection="column">
-                 <Text bold color="cyan">Editing: {pendingToolCall.args.path}</Text>
-                 {pendingToolCall.args.edits.map((e: any, idx: number) => (
-                   <Box key={idx} flexDirection="column" marginTop={1} borderStyle="single" borderColor="dim">
-                     <Text color="red">- {e.old_string.substring(0, 100)}...</Text>
-                     <Text color="green">+ {e.new_string.substring(0, 100)}...</Text>
-                   </Box>
-                 ))}
+                 <Text color="cyan">edit {pendingToolCall.args.path}</Text>
+                 <Text color="red">- {pendingToolCall.args.edits[0]?.old_string.substring(0, 40)}...</Text>
+                 <Text color="green">+ {pendingToolCall.args.edits[0]?.new_string.substring(0, 40)}...</Text>
                </Box>
              ) : (
-               <Text dimColor>{JSON.stringify(pendingToolCall.args, null, 2)}</Text>
+               <Text dimColor>{JSON.stringify(pendingToolCall.args)}</Text>
              )}
           </Box>
-          <Box marginTop={1} borderStyle="classic" borderColor="yellow" paddingX={1}>
-            <Text bold>Allow this tool call? (y/n): </Text>
+          <Box marginTop={1}>
+            <Text bold>Allow? (y/n) </Text>
             <TextInput value={input} onChange={setInput} onSubmit={handleSubmit} />
           </Box>
         </Box>
       )}
 
-      {/* Footer / Input */}
+      {/* Sticky Input Footer */}
       {!pendingToolCall && streamingContent === null && (
         <Box borderStyle="round" borderColor="blue" paddingX={1}>
-          <Text bold color="blue">{"user> "}</Text>
-          <TextInput value={input} onChange={setInput} onSubmit={handleSubmit} placeholder="Type your message or 'exit'..." />
+          <Text bold color="blue">› </Text>
+          <TextInput value={input} onChange={setInput} onSubmit={handleSubmit} placeholder="Ask ycode..." />
         </Box>
       )}
     </Box>
