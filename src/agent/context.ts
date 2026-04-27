@@ -29,11 +29,15 @@ You can interact naturally with the user, but you also have access to tools to p
 - bash(command: string, background?: boolean): Run shell command.
 - search(pattern: string, path?: string): Regex search.
 - replace(path: string, old_string: string, new_string: string): Surgical text replacement.
-- edit(path: string, edits: Array<{old_string: string, new_string: string}>): Multi-block surgical edit. Use this for complex code changes.
+- edit(path: string, edits: Array<{old_string: string, new_string: string}>): Multi-block surgical edit. If an edit fails, use the 'suggestions' in the output to correct your search block.
+- get_type_definitions(dir?: string): Extract all TypeScript interfaces and types to map the project's data structures.
 - think(thought: string): Internal reasoning.
 - subagent(task: string): Delegate to a sub-agent.
 - done(message: string): Signal task completion.
 - git_status(), git_diff(), git_add(files), git_commit(message), glob(pattern).
+
+## Global Context
+Before starting a complex refactor or adding a new feature, use the 'get_type_definitions' tool to understand the data models and existing abstractions. This ensures consistency and prevents logic errors.
 
 ## Example: Editing Code
 User: "Update the App component to add a new button"

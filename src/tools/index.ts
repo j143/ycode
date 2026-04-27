@@ -151,6 +151,19 @@ export const toolDefinitions = [
   {
     type: 'function',
     function: {
+      name: 'get_type_definitions',
+      description: 'Extract all TypeScript interface and type definitions from the project to get a high-level map of data structures.',
+      parameters: {
+        type: 'object',
+        properties: {
+          dir: { type: 'string', description: 'Directory to scan (defaults to "src")' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'think',
       description: 'Reason and plan next steps without performing an external action. Use this for complex multi-step tasks.',
       parameters: {
@@ -275,6 +288,8 @@ export async function executeTool(name: string, args: any, runSubagent?: (task: 
       return await replace(args.path, args.old_string, args.new_string);
     case 'edit':
       return await edit(args.path, args.edits);
+    case 'get_type_definitions':
+      return await getTypeDefinitions(args.dir || 'src');
     case 'think':
       return { success: true, thought: args.thought };
     case 'done':
@@ -303,6 +318,25 @@ async function runGlob(pattern: string) {
   try {
     const files = await glob(pattern, { ignore: 'node_modules/**' });
     return { files };
+  } catch (error: any) {
+    return { error: error.message };
+  }
+}
+
+async function getTypeDefinitions(dir: string) {
+  try {
+    const results: string[] = [];
+    const files = await glob(`${dir}/**/*.ts*`, { ignore: 'node_modules/**' });
+    
+    for (const file of files) {
+      const content = await fs.readFile(file, 'utf-8');
+      const lines = content.split('\n');
+      const types = lines.filter(l => l.startsWith('export interface') || l.startsWith('export type') || l.startsWith('export class'));
+      if (types.length > 0) {
+        results.push(`\n--- ${file} ---\n${types.join('\n')}`);
+      }
+    }
+    return results.join('\n');
   } catch (error: any) {
     return { error: error.message };
   }
@@ -475,11 +509,25 @@ async function edit(filePath: string, edits: { old_string: string, new_string: s
     
     for (const { old_string, new_string } of edits) {
       const occurrences = content.split(old_string).length - 1;
+      
       if (occurrences === 0) {
-        return { error: `Could not find exact string: "${old_string}" in ${filePath}` };
+        // Intelligence: Fuzzy match to help the model correct itself
+        const lines = content.split('\n');
+        const searchSnippet = old_string.split('\n')[0].trim();
+        const suggestions = lines
+          .map((l, i) => ({ line: l, index: i }))
+          .filter(l => l.line.includes(searchSnippet))
+          .slice(0, 3);
+          
+        return { 
+          error: `Could not find exact string in ${filePath}.`,
+          hint: `The first line of your search block ("${searchSnippet}") matched these lines in the file. Please refine your 'old_string':`,
+          suggestions: suggestions.map(s => `Line ${s.index + 1}: ${s.line.trim()}`)
+        };
       }
+      
       if (occurrences > 1) {
-        return { error: `Ambiguous replacement: found ${occurrences} occurrences of "${old_string}" in ${filePath}` };
+        return { error: `Ambiguous replacement: found ${occurrences} occurrences of the search block in ${filePath}. Please provide more context in 'old_string'.` };
       }
       content = content.replace(old_string, new_string);
     }

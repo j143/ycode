@@ -205,6 +205,19 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
             {actions.slice(-5).map((action) => <ActionItem key={action.id} action={action} />)}
             {actions.length === 0 && <Text dimColor italic>No actions yet.</Text>}
           </Box>
+          
+          <Box borderStyle="single" borderColor="dim" marginTop={1} paddingX={1}>
+            <Text bold color="yellow">PROCESSES</Text>
+            {actions.filter(a => a.name === 'bash' && a.args.background && a.status === 'success').map((a, i) => (
+              <Box key={i} flexDirection="row" justifyContent="space-between">
+                <Text dimColor>• {a.args.command.substring(0, 15)}...</Text>
+                <Text color="green">PID:{a.result?.pid}</Text>
+              </Box>
+            ))}
+            {actions.filter(a => a.name === 'bash' && a.args.background && a.status === 'success').length === 0 && (
+              <Text dimColor italic>No bg processes.</Text>
+            )}
+          </Box>
         </Box>
       </Box>
 
