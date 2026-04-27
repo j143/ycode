@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import OpenAI from 'openai';
 import { AgentContext } from './context.js';
 import { executeTool } from '../tools/index.js';
@@ -37,8 +37,41 @@ export function useAgent(isAutoMode: boolean = false) {
   const [actions, setActions] = useState<Action[]>([]);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
+  const [thinkingTime, setThinkingTime] = useState(0);
   const [pendingToolCall, setPendingToolCall] = useState<PendingToolCall | null>(null);
+  const [ambientInfo, setAmbientInfo] = useState({ branch: '', dir: '' });
   const contextRef = useRef(new AgentContext());
+  const thinkingTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const fetchAmbientInfo = async () => {
+      try {
+        const branchRes = await executeTool('bash', { command: 'git rev-parse --abbrev-ref HEAD' });
+        const dirRes = await executeTool('bash', { command: 'basename $(pwd)' });
+        setAmbientInfo({ 
+          branch: branchRes.stdout?.trim() || 'no-git', 
+          dir: dirRes.stdout?.trim() || 'unknown' 
+        });
+      } catch (e) { /* ignore */ }
+    };
+    fetchAmbientInfo();
+  }, []);
+
+  const startThinking = useCallback(() => {
+    setIsThinking(true);
+    setThinkingTime(0);
+    thinkingTimerRef.current = setInterval(() => {
+      setThinkingTime(t => t + 1);
+    }, 1000);
+  }, []);
+
+  const stopThinking = useCallback(() => {
+    setIsThinking(false);
+    if (thinkingTimerRef.current) {
+      clearInterval(thinkingTimerRef.current);
+      thinkingTimerRef.current = null;
+    }
+  }, []);
 
   const addMessage = useCallback((msg: Message) => {
     setMessages(prev => [...prev, msg]);
@@ -57,10 +90,9 @@ export function useAgent(isAutoMode: boolean = false) {
     const currentContext = externalContext || contextRef.current;
 
     if (userPrompt) {
-      // Pre-emptive Context Injection: Scan for file paths in the prompt
+      // ... (pre-emptive injection logic unchanged)
       const fileRegex = /(?:^|\s)((?:src|docs|test|utils|ui|agent|tools|mcp)\/[\w\-\./]+\.(?:ts|tsx|js|jsx|json|md|txt))(?:\s|$)/g;
       const matches = [...userPrompt.matchAll(fileRegex)];
-      
       let injectedContext = '';
       if (matches.length > 0 && !externalContext) {
         for (const match of matches) {
@@ -70,21 +102,15 @@ export function useAgent(isAutoMode: boolean = false) {
             if (result && result.content) {
               injectedContext += `\n\n--- Content of ${filePath} ---\n${result.content}\n--- End of ${filePath} ---`;
             }
-          } catch (e) { /* ignore read errors for pre-emptive injection */ }
+          } catch (e) { /* ignore */ }
         }
       }
-
-      const finalPromptForModel = injectedContext 
-        ? `${userPrompt}\n\n[PRE-EMPTIVE CONTEXT]\nI have automatically read the following files for you to help with your task:${injectedContext}`
-        : userPrompt;
-
-      if (!externalContext) {
-        setMessages(prev => [...prev, { role: 'user', content: userPrompt }]);
-      }
+      const finalPromptForModel = injectedContext ? `${userPrompt}\n\n[PRE-EMPTIVE CONTEXT]\nI have automatically read the following files for you to help with your task:${injectedContext}` : userPrompt;
+      if (!externalContext) setMessages(prev => [...prev, { role: 'user', content: userPrompt }]);
       currentContext.addMessage({ role: 'user', content: finalPromptForModel });
     }
 
-    setIsThinking(true);
+    startThinking();
     setStreamingContent('');
     let fullContent = '';
 
@@ -109,11 +135,9 @@ export function useAgent(isAutoMode: boolean = false) {
       }
 
       setStreamingContent(null);
-      if (!externalContext) {
-        setMessages(prev => [...prev, { role: 'assistant', content: fullContent }]);
-      }
+      if (!externalContext) setMessages(prev => [...prev, { role: 'assistant', content: fullContent }]);
       currentContext.addMessage({ role: 'assistant', content: fullContent });
-      setIsThinking(false);
+      stopThinking();
 
       // Parse manual tool calls
       const toolCallRegex = /<tool_call name="([^"]+)">([\s\S]*?)<\/tool_call>/g;
@@ -121,10 +145,7 @@ export function useAgent(isAutoMode: boolean = false) {
       const manualToolCalls = [];
 
       while ((match = toolCallRegex.exec(fullContent)) !== null) {
-        manualToolCalls.push({
-          name: match[1],
-          argsRaw: match[2].trim()
-        });
+        manualToolCalls.push({ name: match[1], argsRaw: match[2].trim() });
       }
 
       if (manualToolCalls.length > 0) {
@@ -135,21 +156,12 @@ export function useAgent(isAutoMode: boolean = false) {
           let args = {};
           try {
             args = JSON.parse(toolCall.argsRaw);
-          } catch (e) {
-            continue;
-          }
+          } catch (e) { continue; }
 
           const actionId = Math.random().toString(36).substring(7);
-          const newAction: Action = {
-            id: actionId,
-            name: toolCall.name,
-            args,
-            status: 'pending'
-          };
-          
+          const newAction: Action = { id: actionId, name: toolCall.name, args, status: 'pending' };
           if (!externalContext) setActions(prev => [...prev, newAction]);
 
-          // Read-only tools auto-allow
           const isReadOnly = ['ls', 'cat', 'search', 'think', 'subagent'].includes(toolCall.name);
           let allowed = isReadOnly || isAutoMode;
 
@@ -167,20 +179,13 @@ export function useAgent(isAutoMode: boolean = false) {
               const subContext = new AgentContext();
               const parentHistory = currentContext.getHistory();
               const contextSummary = parentHistory.filter(m => m.role === 'user').slice(-3).map(m => m.content).join('\n');
-              
-              subContext.addMessage({ 
-                role: 'user', 
-                content: `Context from parent agent:\n${contextSummary}\n\nObjective: ${task}\n\nWork on this task and use the 'done' tool when you are finished.` 
-              });
-              
+              subContext.addMessage({ role: 'user', content: `Context from parent agent:\n${contextSummary}\n\nObjective: ${task}\n\nWork on this task and use the 'done' tool when you are finished.` });
               let result: any = null;
               while (!result) {
                 const turnResult = await runTurn(undefined, subContext, depth + 1);
-                if (turnResult && (turnResult as any).status === "Task completed.") {
-                  result = turnResult;
-                } else if (turnResult && (turnResult as any).error) {
-                  result = turnResult;
-                } else if (!turnResult) {
+                if (turnResult && (turnResult as any).status === "Task completed.") result = turnResult;
+                else if (turnResult && (turnResult as any).error) result = turnResult;
+                else if (!turnResult) {
                   const history = subContext.getHistory();
                   const lastAssistantMsg = history[history.length - 1];
                   result = { success: false, message: lastAssistantMsg.role === 'assistant' ? lastAssistantMsg.content : 'Sub-agent stopped.' };
@@ -189,15 +194,26 @@ export function useAgent(isAutoMode: boolean = false) {
               return result;
             };
 
-            const toolResult = await executeTool(toolCall.name, args, runSubagentInternal);
+            let toolResult = await executeTool(toolCall.name, args, runSubagentInternal);
             
-            if (!externalContext) updateAction(actionId, { status: 'success', result: toolResult });
+            // Deterministic Guardrail: Auto-Linting after edit/write
+            if ((toolCall.name === 'edit' || toolCall.name === 'write') && !toolResult.error) {
+               if (!externalContext) updateAction(actionId, { status: 'running' });
+               const lintResult = await executeTool('bash', { command: 'npm run build' });
+               if (lintResult.error || (lintResult.stderr && lintResult.stderr.includes('error'))) {
+                 toolResult = { 
+                   success: false, 
+                   error: 'Build failed after changes. Please fix the following errors:',
+                   details: lintResult.stderr || lintResult.error 
+                 };
+               }
+            }
+
+            if (!externalContext) updateAction(actionId, { status: toolResult.error ? 'error' : 'success', result: toolResult });
             currentContext.addMessage({ role: 'user', content: `[SYSTEM] Tool ${toolCall.name} returned: ${JSON.stringify(toolResult)}` });
             
             anyExecuted = true;
-            if (toolCall.name === 'done') {
-              finalResult = toolResult;
-            }
+            if (toolCall.name === 'done') finalResult = toolResult;
           } else {
             if (!externalContext) updateAction(actionId, { status: 'denied' });
             currentContext.addMessage({ role: 'user', content: `[SYSTEM] Tool call ${toolCall.name} was denied by the user.` });
@@ -208,17 +224,19 @@ export function useAgent(isAutoMode: boolean = false) {
         if (anyExecuted) return await runTurn(undefined, externalContext, depth);
       }
     } catch (error: any) {
-      setIsThinking(false);
+      stopThinking();
       return { error: error.message };
     }
-  }, [isAutoMode, updateAction]);
+  }, [isAutoMode, updateAction, startThinking, stopThinking]);
 
   return {
     messages,
     actions,
     streamingContent,
     isThinking,
+    thinkingTime,
     pendingToolCall,
+    ambientInfo,
     runTurn
   };
 }

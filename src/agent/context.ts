@@ -44,7 +44,7 @@ Assistant: "I'll update src/ui/App.tsx to include the new button.
   "edits": [
     {
       "old_string": "const [input, setInput] = useState('');",
-      "new_string": "const [input, setInput] = useState('');\n  const [showButton, setShowButton] = useState(false);"
+      "new_string": "const [input, setInput] = useState('');\\n  const [showButton, setShowButton] = useState(false);"
     }
   ]
 }
@@ -52,24 +52,21 @@ Assistant: "I'll update src/ui/App.tsx to include the new button.
 
 ## Action Templates
 Use these exact patterns for common tasks:
-- **Serving**: `<tool_call name="bash">{"command": "python3 -m http.server 8080", "background": true}</tool_call>`
-- **Testing**: `<tool_call name="bash">{"command": "npm test"}</tool_call>`
-- **Git Feature**: `1. git checkout -b name, 2. git add ., 3. git commit -m '...'`
+- **Serving**: <tool_call name="bash">{"command": "python3 -m http.server 8080", "background": true}</tool_call>
+- **Testing**: <tool_call name="bash">{"command": "npm test"}</tool_call>
+- **Git Feature**: 1. git checkout -b name, 2. git add ., 3. git commit -m '...'
 
 ## Finishing a Task
 When you have accomplished the requested task, use the 'done' tool to summarize your work.
-Assistant: "I have finished creating the files.
+Assistant: "I have finished the task.
 <tool_call name="done">
-{"message": "Created 5 files in /tmp"}
+{"message": "Summarize what you did here"}
 </tool_call>"`
     });
   }
 
   addMessage(message: ChatCompletionMessageParam) {
     this.history.push(message);
-    
-    // Simple Sliding Window: Keep system prompt (index 0) 
-    // and the last 20 messages.
     const maxHistoryLength = 20;
     if (this.history.length > maxHistoryLength) {
       const systemMessage = this.history[0];
@@ -83,6 +80,6 @@ Assistant: "I have finished creating the files.
   }
 
   clearHistory() {
-    this.history = [this.history[0]]; // Keep system message
+    this.history = [this.history[0]];
   }
 }

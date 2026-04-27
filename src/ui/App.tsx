@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
@@ -12,7 +12,6 @@ const MessageItem = React.memo(({ msg }: { msg: any }) => {
   const isAssistant = msg.role === 'assistant';
   const isUser = msg.role === 'user';
 
-  // Contextual rendering for tool results
   if (isSystem) {
     const toolMatch = msg.content.match(/\[SYSTEM\] Tool (\w+) returned: (.*)/);
     if (toolMatch) {
@@ -38,7 +37,6 @@ const MessageItem = React.memo(({ msg }: { msg: any }) => {
         </Box>
       );
     }
-
     return (
       <Box paddingLeft={2} marginBottom={1}>
         <Text dimColor italic>{msg.content}</Text>
@@ -46,27 +44,20 @@ const MessageItem = React.memo(({ msg }: { msg: any }) => {
     );
   }
 
-  // Contextual rendering for Assistant thoughts vs actions
   if (isAssistant) {
     const thoughtMatch = msg.content.match(/<tool_call name="think">([\s\S]*?)<\/tool_call>/);
-    
-    // Strip ALL tool calls from the chat layer display content
     const contentToDisplay = msg.content.replace(/<tool_call name="[^"]+">([\s\S]*?)<\/tool_call>/g, '').trim();
 
     return (
       <Box flexDirection="column" marginBottom={1}>
-        <Box>
-          <Text bold color="magenta">ycode</Text>
-        </Box>
+        <Box><Text bold color="magenta">ycode</Text></Box>
         <Box paddingLeft={2} flexDirection="column">
           {thoughtMatch && (
             <Box borderStyle="single" borderColor="blue" paddingX={1} marginBottom={1}>
               <Text italic color="blue">Thought: {JSON.parse(thoughtMatch[1].trim()).thought}</Text>
             </Box>
           )}
-          {contentToDisplay && (
-            <Markdown>{contentToDisplay}</Markdown>
-          )}
+          {contentToDisplay && <Markdown>{contentToDisplay}</Markdown>}
         </Box>
       </Box>
     );
@@ -74,12 +65,8 @@ const MessageItem = React.memo(({ msg }: { msg: any }) => {
 
   return (
     <Box flexDirection="column" marginBottom={1}>
-      <Box>
-        <Text bold color="blue">You</Text>
-      </Box>
-      <Box paddingLeft={2}>
-        <Text>{msg.content}</Text>
-      </Box>
+      <Box><Text bold color="blue">You</Text></Box>
+      <Box paddingLeft={2}><Text>{msg.content}</Text></Box>
     </Box>
   );
 });
@@ -118,9 +105,7 @@ const ActionItem = ({ action }: { action: any }) => {
       </Box>
       {action.status === 'success' && action.result && (
          <Box marginTop={1} paddingLeft={2}>
-           <Text color="green" dimColor>
-             Result: {JSON.stringify(action.result).substring(0, 100)}...
-           </Text>
+           <Text color="green" dimColor>Result: {JSON.stringify(action.result).substring(0, 100)}...</Text>
          </Box>
       )}
     </Box>
@@ -129,7 +114,7 @@ const ActionItem = ({ action }: { action: any }) => {
 
 export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => {
   const [isAutoMode, setIsAutoMode] = useState(false);
-  const { messages, actions, streamingContent, isThinking, pendingToolCall, runTurn } = useAgent(isAutoMode);
+  const { messages, actions, streamingContent, isThinking, thinkingTime, pendingToolCall, ambientInfo, runTurn } = useAgent(isAutoMode);
   const [input, setInput] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -143,7 +128,6 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
 
   useInput((inputStr, key) => {
     if (pendingToolCall) return;
-
     if (key.upArrow) {
       if (historyIndex < history.length - 1) {
         const nextIndex = historyIndex + 1;
@@ -151,16 +135,12 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
         setInput(history[history.length - 1 - nextIndex] || '');
       }
     }
-
     if (key.downArrow) {
       if (historyIndex >= 0) {
         const nextIndex = historyIndex - 1;
         setHistoryIndex(nextIndex);
-        if (nextIndex === -1) {
-          setInput('');
-        } else {
-          setInput(history[history.length - 1 - nextIndex] || '');
-        }
+        if (nextIndex === -1) setInput('');
+        else setInput(history[history.length - 1 - nextIndex] || '');
       }
     }
   });
@@ -170,25 +150,18 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
       exit();
       return;
     }
-
     if (value.toLowerCase() === '/auto') {
       setIsAutoMode(prev => !prev);
       setInput('');
       return;
     }
-
     if (pendingToolCall) {
-      const allowed = value.toLowerCase() === 'y';
-      pendingToolCall.resolve(allowed);
+      pendingToolCall.resolve(value.toLowerCase() === 'y');
       setInput('');
       return;
     }
-
-    if (value.trim() !== '') {
-      setHistory(prev => [...prev, value]);
-    }
+    if (value.trim() !== '') setHistory(prev => [...prev, value]);
     setHistoryIndex(-1);
-
     const finalPrompt = value.trim() === '' ? 'Please continue.' : value;
     setInput('');
     runTurn(finalPrompt);
@@ -197,23 +170,31 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
   return (
     <Box flexDirection="column" padding={1} minHeight={10}>
       {/* Header */}
-      <Box borderStyle="single" borderColor="cyan" paddingX={1} marginBottom={1}>
-        <Text bold>YCODE</Text>
-        <Box marginLeft={2}><Text dimColor>Local Agentic CLI</Text></Box>
+      <Box borderStyle="single" borderColor="cyan" paddingX={1} marginBottom={1} flexDirection="row">
+        <Box flexDirection="column">
+          <Text bold>YCODE</Text>
+          <Box flexDirection="row">
+            <Text dimColor>{ambientInfo.dir}</Text>
+            <Text color="cyan"> ({ambientInfo.branch})</Text>
+          </Box>
+        </Box>
         <Box flexGrow={1} />
-        {isAutoMode && <Box><Text bold color="red">[AUTO-MODE ON]</Text></Box>}
+        <Box flexDirection="column" alignItems="flex-end">
+          {isAutoMode && <Text bold color="red">[AUTO-MODE ON]</Text>}
+          {isThinking && (
+            <Text color="yellow">
+               <Spinner type="dots" /> <Text italic>Thinking ({thinkingTime}s)...</Text>
+            </Text>
+          )}
+        </Box>
       </Box>
 
       <Box flexDirection="row" flexGrow={1} marginBottom={1}>
         {/* Layer 1: Conversation */}
         <Box flexDirection="column" width="65%" marginRight={2}>
           <Box flexDirection="column" flexGrow={1}>
-            {messages.map((msg, i) => (
-              <MessageItem key={i} msg={msg} />
-            ))}
-            {streamingContent !== null && (
-              <MessageItem msg={{ role: 'assistant', content: streamingContent }} />
-            )}
+            {messages.map((msg, i) => <MessageItem key={i} msg={msg} />)}
+            {streamingContent !== null && <MessageItem msg={{ role: 'assistant', content: streamingContent }} />}
           </Box>
         </Box>
 
@@ -221,12 +202,8 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
         <Box flexDirection="column" width="35%" borderStyle="double" borderColor="dim" paddingX={1}>
           <Text bold color="cyan">ACTIVITY</Text>
           <Box flexDirection="column" marginTop={1}>
-            {actions.slice(-5).map((action) => (
-              <ActionItem key={action.id} action={action} />
-            ))}
-            {actions.length === 0 && (
-              <Text dimColor italic>No actions yet.</Text>
-            )}
+            {actions.slice(-5).map((action) => <ActionItem key={action.id} action={action} />)}
+            {actions.length === 0 && <Text dimColor italic>No actions yet.</Text>}
           </Box>
         </Box>
       </Box>
@@ -261,19 +238,12 @@ export const App: React.FC<{ initialPrompt?: string }> = ({ initialPrompt }) => 
       )}
 
       {/* Footer / Input */}
-      <Box flexDirection="column">
-        {isThinking && !pendingToolCall && streamingContent === '' && (
-          <Box marginBottom={1}>
-            <Text color="yellow"><Spinner type="dots" /> <Text italic>Thinking...</Text></Text>
-          </Box>
-        )}
-        {!pendingToolCall && streamingContent === null && (
-          <Box borderStyle="round" borderColor="blue" paddingX={1}>
-            <Text bold color="blue">{"user> "}</Text>
-            <TextInput value={input} onChange={setInput} onSubmit={handleSubmit} placeholder="Type your message or 'exit'..." />
-          </Box>
-        )}
-      </Box>
+      {!pendingToolCall && streamingContent === null && (
+        <Box borderStyle="round" borderColor="blue" paddingX={1}>
+          <Text bold color="blue">{"user> "}</Text>
+          <TextInput value={input} onChange={setInput} onSubmit={handleSubmit} placeholder="Type your message or 'exit'..." />
+        </Box>
+      )}
     </Box>
   );
 };
