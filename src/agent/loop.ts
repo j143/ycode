@@ -42,7 +42,11 @@ export async function startAgentLoop(initialPrompt?: string) {
   }
 }
 
-async function runAgentTurn(context: AgentContext) {
+async function runAgentTurn(context: AgentContext, depth: number = 0) {
+  if (depth > 5) {
+    return { error: 'Maximum sub-agent recursion depth reached.' };
+  }
+
   const spinner = ora('Agent is thinking...').start();
 
   try {
@@ -110,7 +114,47 @@ async function runAgentTurn(context: AgentContext) {
           continue;
         }
 
-        const toolResult = await executeTool(toolCall.name, args);
+        const runSubagent = async (task: string) => {
+          const currentDepth = depth + 1;
+          console.log(chalk.cyan(`\n[Sub-agent Started (Depth: ${currentDepth})]: ${task}`));
+          const subContext = new AgentContext();
+          
+          // Provide some ambient context to the sub-agent
+          const parentHistory = context.getHistory();
+          const contextSummary = parentHistory
+            .filter(m => m.role === 'user')
+            .slice(-3)
+            .map(m => m.content)
+            .join('\n');
+
+          subContext.addMessage({ 
+            role: 'user', 
+            content: `Context from parent agent:\n${contextSummary}\n\nObjective: ${task}\n\nWork on this task and use the 'done' tool when you are finished. If you cannot complete the task, explain why and use 'done'.` 
+          });
+          
+          let result: any = null;
+          // Sub-agent loop
+          while (!result) {
+            const turnResult = await runAgentTurn(subContext, depth + 1);
+            if (turnResult && (turnResult as any).status === "Task completed.") {
+              result = turnResult;
+            } else if (turnResult && (turnResult as any).error) {
+              result = turnResult;
+            } else if (!turnResult) {
+              // Agent responded without tool calls
+              const history = subContext.getHistory();
+              const lastAssistantMsg = history[history.length - 1];
+              result = { 
+                success: false, 
+                message: lastAssistantMsg.role === 'assistant' ? lastAssistantMsg.content : 'Sub-agent stopped without calling done.' 
+              };
+            }
+          }
+          console.log(chalk.cyan(`\n[Sub-agent Finished (Depth: ${currentDepth})]: ${task}`));
+          return result;
+        };
+
+        const toolResult = await executeTool(toolCall.name, args, runSubagent);
         
         console.log(chalk.green(`[Tool Result]: ${JSON.stringify(toolResult).substring(0, 100)}${JSON.stringify(toolResult).length > 100 ? '...' : ''}`));
 
@@ -118,13 +162,18 @@ async function runAgentTurn(context: AgentContext) {
           role: 'user',
           content: `[SYSTEM] Tool ${toolCall.name} returned: ${JSON.stringify(toolResult)}`
         });
+
+        if (toolCall.name === 'done') {
+           return toolResult;
+        }
       }
 
       // Automatically run another turn to process tool results
-      await runAgentTurn(context);
+      return await runAgentTurn(context, depth);
     }
   } catch (error: any) {
     spinner.fail('Error in agent loop');
     console.error(chalk.red(error.message));
+    return { error: error.message };
   }
 }

@@ -47,4 +47,16 @@ describe('Tools Integration', () => {
     await executeTool('rm', { path: filePath });
     await expect(fs.access(filePath)).rejects.toThrow();
   });
+
+  it('subagent should call the runSubagent callback', async () => {
+    const task = 'test task';
+    const mockRunSubagent = async (t: string) => ({ success: true, task: t });
+    const result = await executeTool('subagent', { task }, mockRunSubagent);
+    expect(result).toEqual({ success: true, task });
+  });
+
+  it('subagent should return error if callback is missing', async () => {
+    const result = await executeTool('subagent', { task: 'test' });
+    expect(result.error).toBeDefined();
+  });
 });

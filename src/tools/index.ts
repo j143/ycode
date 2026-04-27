@@ -81,11 +81,12 @@ export const toolDefinitions = [
     type: 'function',
     function: {
       name: 'bash',
-      description: 'Execute a shell command in the terminal',
+      description: 'Execute a shell command. Use background: true for servers or long-running tasks.',
       parameters: {
         type: 'object',
         properties: {
-          command: { type: 'string', description: 'The shell command to execute' }
+          command: { type: 'string', description: 'The shell command to execute' },
+          background: { type: 'boolean', description: 'Whether to run the command in the background (default: false)' }
         },
         required: ['command']
       }
@@ -119,6 +120,31 @@ export const toolDefinitions = [
           new_string: { type: 'string', description: 'The new string to replace it with' }
         },
         required: ['path', 'old_string', 'new_string']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'edit',
+      description: 'Surgically edit a file using search and replace blocks. Use this for precise code modifications.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'The path to the file' },
+          edits: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                old_string: { type: 'string', description: 'The exact text to find' },
+                new_string: { type: 'string', description: 'The text to replace it with' }
+              },
+              required: ['old_string', 'new_string']
+            }
+          }
+        },
+        required: ['path', 'edits']
       }
     }
   },
@@ -212,10 +238,24 @@ export const toolDefinitions = [
         required: ['pattern']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'subagent',
+      description: 'Delegate a specific task to a sub-agent. The sub-agent has its own context and will work until it completes the task.',
+      parameters: {
+        type: 'object',
+        properties: {
+          task: { type: 'string', description: 'The specific task or objective for the sub-agent' }
+        },
+        required: ['task']
+      }
+    }
   }
 ];
 
-export async function executeTool(name: string, args: any): Promise<any> {
+export async function executeTool(name: string, args: any, runSubagent?: (task: string) => Promise<any>): Promise<any> {
   switch (name) {
     case 'ls':
       return await ls(args.path || '.');
@@ -228,11 +268,13 @@ export async function executeTool(name: string, args: any): Promise<any> {
     case 'mkdir':
       return await mkdir(args.path);
     case 'bash':
-      return await bash(args.command);
+      return await bash(args.command, args.background);
     case 'search':
       return await search(args.pattern, args.path || '.');
     case 'replace':
       return await replace(args.path, args.old_string, args.new_string);
+    case 'edit':
+      return await edit(args.path, args.edits);
     case 'think':
       return { success: true, thought: args.thought };
     case 'done':
@@ -247,6 +289,11 @@ export async function executeTool(name: string, args: any): Promise<any> {
       return await gitCommit(args.message);
     case 'glob':
       return await runGlob(args.pattern);
+    case 'subagent':
+      if (runSubagent) {
+        return await runSubagent(args.task);
+      }
+      return { error: 'Subagent functionality is not available in this context.' };
     default:
       throw new Error(`Tool ${name} not found`);
   }
@@ -335,7 +382,28 @@ async function mkdir(dirPath: string) {
   }
 }
 
-async function bash(command: string) {
+const backgroundProcesses = new Map<number, { command: string, child: any }>();
+
+async function bash(command: string, background: boolean = false) {
+  if (background) {
+    try {
+      const child = exec(command);
+      const pid = child.pid;
+      if (pid) {
+        backgroundProcesses.set(pid, { command, child });
+        // Don't wait for completion
+        return { 
+          success: true, 
+          message: `Process started in background with PID ${pid}.`,
+          pid 
+        };
+      }
+      return { error: 'Failed to start background process.' };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  }
+
   try {
     const { stdout, stderr } = await execAsync(command);
     return { stdout, stderr };
@@ -396,6 +464,28 @@ async function replace(filePath: string, oldString: string, newString: string) {
     const newContent = content.replace(oldString, newString);
     await fs.writeFile(filePath, newContent, 'utf-8');
     return { success: true };
+  } catch (error: any) {
+    return { error: error.message };
+  }
+}
+
+async function edit(filePath: string, edits: { old_string: string, new_string: string }[]) {
+  try {
+    let content = await fs.readFile(filePath, 'utf-8');
+    
+    for (const { old_string, new_string } of edits) {
+      const occurrences = content.split(old_string).length - 1;
+      if (occurrences === 0) {
+        return { error: `Could not find exact string: "${old_string}" in ${filePath}` };
+      }
+      if (occurrences > 1) {
+        return { error: `Ambiguous replacement: found ${occurrences} occurrences of "${old_string}" in ${filePath}` };
+      }
+      content = content.replace(old_string, new_string);
+    }
+    
+    await fs.writeFile(filePath, content, 'utf-8');
+    return { success: true, message: `Applied ${edits.length} edits to ${filePath}` };
   } catch (error: any) {
     return { error: error.message };
   }

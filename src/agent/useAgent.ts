@@ -6,7 +6,7 @@ import { executeTool } from '../tools/index.js';
 const client = new OpenAI({
   apiKey: process.env.API_KEY || 'ollama',
   baseURL: process.env.API_BASE_URL || 'http://localhost:11434/v1',
-  dangerouslyAllowBrowser: true // Ink runs in Node, but some OpenAI SDK versions check this
+  dangerouslyAllowBrowser: true 
 });
 
 function getModel() {
@@ -24,8 +24,17 @@ interface PendingToolCall {
   resolve: (allowed: boolean) => void;
 }
 
+interface Action {
+  id: string;
+  name: string;
+  args: any;
+  status: 'pending' | 'running' | 'success' | 'error' | 'denied';
+  result?: any;
+}
+
 export function useAgent(isAutoMode: boolean = false) {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [actions, setActions] = useState<Action[]>([]);
   const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
   const [pendingToolCall, setPendingToolCall] = useState<PendingToolCall | null>(null);
@@ -36,9 +45,22 @@ export function useAgent(isAutoMode: boolean = false) {
     contextRef.current.addMessage(msg as any);
   }, []);
 
-  const runTurn = useCallback(async (userPrompt?: string) => {
+  const updateAction = useCallback((id: string, updates: Partial<Action>) => {
+    setActions(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+  }, []);
+
+  const runTurn = useCallback(async (userPrompt?: string, externalContext?: AgentContext, depth: number = 0) => {
+    if (depth > 5) {
+      return { error: 'Maximum sub-agent recursion depth reached.' };
+    }
+
+    const currentContext = externalContext || contextRef.current;
+
     if (userPrompt) {
-      addMessage({ role: 'user', content: userPrompt });
+      if (!externalContext) {
+        setMessages(prev => [...prev, { role: 'user', content: userPrompt }]);
+      }
+      currentContext.addMessage({ role: 'user', content: userPrompt });
     }
 
     setIsThinking(true);
@@ -48,7 +70,7 @@ export function useAgent(isAutoMode: boolean = false) {
     try {
       const stream = await client.chat.completions.create({
         model: getModel(),
-        messages: contextRef.current.getHistory(),
+        messages: currentContext.getHistory(),
         stream: true,
       });
 
@@ -66,7 +88,10 @@ export function useAgent(isAutoMode: boolean = false) {
       }
 
       setStreamingContent(null);
-      addMessage({ role: 'assistant', content: fullContent });
+      if (!externalContext) {
+        setMessages(prev => [...prev, { role: 'assistant', content: fullContent }]);
+      }
+      currentContext.addMessage({ role: 'assistant', content: fullContent });
       setIsThinking(false);
 
       // Parse manual tool calls
@@ -83,23 +108,28 @@ export function useAgent(isAutoMode: boolean = false) {
 
       if (manualToolCalls.length > 0) {
         let anyExecuted = false;
-        let isDone = false;
+        let finalResult = null;
 
         for (const toolCall of manualToolCalls) {
           let args = {};
           try {
             args = JSON.parse(toolCall.argsRaw);
           } catch (e) {
-            addMessage({ role: 'user', content: `[SYSTEM] Error parsing arguments for tool ${toolCall.name}.` });
             continue;
           }
 
-          if (toolCall.name === 'done') {
-            isDone = true;
-          }
+          const actionId = Math.random().toString(36).substring(7);
+          const newAction: Action = {
+            id: actionId,
+            name: toolCall.name,
+            args,
+            status: 'pending'
+          };
+          
+          if (!externalContext) setActions(prev => [...prev, newAction]);
 
           // Read-only tools auto-allow
-          const isReadOnly = ['ls', 'cat', 'search', 'think'].includes(toolCall.name);
+          const isReadOnly = ['ls', 'cat', 'search', 'think', 'subagent'].includes(toolCall.name);
           let allowed = isReadOnly || isAutoMode;
 
           if (!allowed) {
@@ -110,30 +140,61 @@ export function useAgent(isAutoMode: boolean = false) {
           }
 
           if (allowed) {
-            const toolResult = await executeTool(toolCall.name, args);
-            addMessage({ 
-              role: 'user', 
-              content: `[SYSTEM] Tool ${toolCall.name} returned: ${JSON.stringify(toolResult)}` 
-            });
+            if (!externalContext) updateAction(actionId, { status: 'running' });
+
+            const runSubagentInternal = async (task: string) => {
+              const subContext = new AgentContext();
+              const parentHistory = currentContext.getHistory();
+              const contextSummary = parentHistory.filter(m => m.role === 'user').slice(-3).map(m => m.content).join('\n');
+              
+              subContext.addMessage({ 
+                role: 'user', 
+                content: `Context from parent agent:\n${contextSummary}\n\nObjective: ${task}\n\nWork on this task and use the 'done' tool when you are finished.` 
+              });
+              
+              let result: any = null;
+              while (!result) {
+                const turnResult = await runTurn(undefined, subContext, depth + 1);
+                if (turnResult && (turnResult as any).status === "Task completed.") {
+                  result = turnResult;
+                } else if (turnResult && (turnResult as any).error) {
+                  result = turnResult;
+                } else if (!turnResult) {
+                  const history = subContext.getHistory();
+                  const lastAssistantMsg = history[history.length - 1];
+                  result = { success: false, message: lastAssistantMsg.role === 'assistant' ? lastAssistantMsg.content : 'Sub-agent stopped.' };
+                }
+              }
+              return result;
+            };
+
+            const toolResult = await executeTool(toolCall.name, args, runSubagentInternal);
+            
+            if (!externalContext) updateAction(actionId, { status: 'success', result: toolResult });
+            currentContext.addMessage({ role: 'user', content: `[SYSTEM] Tool ${toolCall.name} returned: ${JSON.stringify(toolResult)}` });
+            
             anyExecuted = true;
+            if (toolCall.name === 'done') {
+              finalResult = toolResult;
+            }
           } else {
-            addMessage({ role: 'user', content: `[SYSTEM] Tool call ${toolCall.name} was denied by the user.` });
+            if (!externalContext) updateAction(actionId, { status: 'denied' });
+            currentContext.addMessage({ role: 'user', content: `[SYSTEM] Tool call ${toolCall.name} was denied by the user.` });
           }
         }
         
-        // After executing all tool calls, continue the turn automatically if not done
-        if (anyExecuted && !isDone) {
-           await runTurn();
-        }
+        if (finalResult) return finalResult;
+        if (anyExecuted) return await runTurn(undefined, externalContext, depth);
       }
     } catch (error: any) {
-      addMessage({ role: 'system', content: `Error: ${error.message}` });
       setIsThinking(false);
+      return { error: error.message };
     }
-  }, [addMessage, isAutoMode]);
+  }, [isAutoMode, updateAction]);
 
   return {
     messages,
+    actions,
     streamingContent,
     isThinking,
     pendingToolCall,
