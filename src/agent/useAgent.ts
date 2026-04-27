@@ -148,6 +148,14 @@ export function useAgent(isAutoMode: boolean = false) {
         manualToolCalls.push({ name: match[1], argsRaw: match[2].trim() });
       }
 
+      // [STRICT OUTPUT ENFORCEMENT]
+      const hasCodeBlock = /```[\s\S]*?```/.test(fullContent);
+      if (hasCodeBlock && manualToolCalls.length === 0 && !externalContext) {
+        const hint = "[SYSTEM] I noticed you provided a code block but did not use a tool to create or edit a file. If your intent was to modify the project, you MUST use the 'write' or 'edit' tool. Please try again with a tool call.";
+        currentContext.addMessage({ role: 'user', content: hint });
+        return await runTurn(undefined, externalContext, depth);
+      }
+
       if (manualToolCalls.length > 0) {
         let anyExecuted = false;
         let finalResult = null;
